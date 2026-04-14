@@ -12,6 +12,7 @@ import triadic_library as triadic
 # SECTION 1: PARAMETER READING & INITIALIZATION
 # =============================================================================
 # Example command: python sweep_delta.py 10000 1000.0 0.07 0.2 42
+# The usage is python sweep_delta.py N density c d0_base seed
 
 try:
     N = int(sys.argv[1])

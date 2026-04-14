@@ -169,6 +169,8 @@ for r in range(2, max_rings + 1):
     Lx_r = N / density
     Ly_r = r * delta
 
+    print(f"  -> Geometry : Lx = {Lx_r:.2f}, Ly = {Ly_r:.4f}")
+
     # 1. Unscaled Test (What happens if we don't scale d0?)
     np.random.seed(seed)
     _, G_unscaled, _ = triadic.random_coupled_rings_netw_PBC(N, Lx_r, r, delta, c, d0_base)

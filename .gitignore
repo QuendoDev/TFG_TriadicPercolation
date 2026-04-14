@@ -13,3 +13,6 @@ sweep_DELTA_*/
 global_*/
 *.csv
 *.png
+
+# Archivos extra
+openh264-1.8.0-win64.dll
