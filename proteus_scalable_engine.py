@@ -14,11 +14,11 @@ import triadic_library as triadic
 # SECTION 1: PARAMETER READING & INITIALIZATION
 # =============================================================================
 # The script expects exactly 12 arguments from the console.
-# Example command: python proteus_scalable_engine.py 10000 400 0.00 1000.0 0.2 0.2 0.03 0.03 0.07 42 2 0.1
-# The order is: N Tmax p density d0 dr cpos cneg c seed num_rings delta_factor
+# Example command: python proteus_scalable_engine.py 1000 400 0.00 200.0 0.2 0.2 0.03 0.03 0.07 42 40 0.2
+# The order is: N_per_ring Tmax p density d0 dr cpos cneg c seed num_rings delta_factor
 
 try:
-    N = int(sys.argv[1])    # Number of nodes
+    N_per_ring = int(sys.argv[1])    # Number of nodes PER RING
     Tmax = int(sys.argv[2]) # Maximum simulation time
     p = float(sys.argv[3])  # Probability of a link not breaking randomly
     density = float(sys.argv[4])    # Node density (it tries to emulate the 2D density)
@@ -29,10 +29,11 @@ try:
     c = float(sys.argv[9])  # Base probability for structural connections
     seed = int(sys.argv[10])    # Random seed for reproducibility
     num_rings = int(sys.argv[11])   # Number of coupled discrete rings
-    delta_factor = float(sys.argv[12])  # Separation factor between rings (Delta = d0 * factor)
+    delta_factor = float(sys.argv[12])  # Separation factor between rings (Delta = d0 * delta_factor)
 except IndexError:
-    print("Error: Missing arguments. Usage: python proteus_rings_engine.py N Tmax p density d0 dr cpos cneg c seed"
-          " num_rings delta_factor")
+    print(
+        "Error: Missing arguments. Usage: python proteus_scalable_engine.py N_per_ring Tmax p density d0 dr cpos cneg c"
+        " seed num_rings delta_factor")
     sys.exit(1)
 
 # Track the total time
@@ -43,13 +44,23 @@ np.random.seed(seed)
 random.seed(seed)
 
 # Geometry calculation for the Discrete Torus
-delta = delta_factor * d0
-Ly = num_rings * delta
+# This method will work because of some equations:
+# 1) rho_2D = N_tot / area_tot
+# 2) N_tot = N_ring * R (number of rings)
+# 3) area_tot = L_x * L_y
+# 4) L_y = Delta * R
+# Substituting 1,2,3,4 we get: rho_2D = N_ring * R / L_x * Delta * R
+# If L_x is defined as L_x = N_ring / rho_1D then rho_2D = rho_1D / Delta, which means that the 2D density is
+# effectively controlled by the choice of Delta (or delta_factor) and doesn't depend on R.
+# Total number of nodes in the system
+N = N_per_ring * num_rings
 
-# To maintain maximum similarity with the 2D continuous model,
-# 'density' is treated as a global 2D superficial density (Nodes / Area).
-# Area = Lx * Ly -> Lx = N / (density * Ly)
-Lx = N / (density * Ly)
+# Physical distance between adjacent rings
+delta = delta_factor * d0
+
+# Total dimensions of the periodic box
+Lx = N_per_ring / density
+Ly = num_rings * delta
 
 L = np.asarray([Lx, Ly])
 
@@ -82,9 +93,9 @@ print("="*60)
 print("--- LOG FILE INITIALIZED ---")
 print("=" * 60)
 print("--- STARTING SIMULATION (COUPLED RINGS) ---")
-print(f"Parameters: N={N}, Tmax={Tmax}, p={p}, density={density}")
-print(f"Geometry  : num_rings={num_rings}, delta={delta:.3f} (factor={delta_factor})")
-print(f"Dimensions: Lx={Lx:.2f}, Ly={Ly:.3f} (Periodic in both axes)")
+print(f"Parameters: N_per_ring={N_per_ring}, Total_N={N}, Tmax={Tmax}, p={p}")
+print(f"Geometry  : num_rings={num_rings}, Linear Density={density}, delta={delta:.4f} (factor={delta_factor})")
+print(f"Dimensions: Lx={Lx:.2f}, Ly={Ly:.4f} (Periodic in both axes)")
 print(f"Distances : d0={d0}, dr={dr}")
 print(f"Connectiv.: cpos={cpos}, cneg={cneg}, c={c}")
 print(f"Seed      : {seed}")
@@ -99,7 +110,15 @@ net_start_time = time.time()
 # 1. Structural Network
 print('Creating structural network (Discrete 2D)...')
 struct_start = time.time()
-nodes, G, adj = triadic.random_coupled_rings_netw_PBC(N, Lx, num_rings, delta, c, d0)
+
+nodes, G, adj = triadic.coupled_rings_structural_network(
+    N_per_ring=N_per_ring,
+    num_rings=num_rings,
+    Lx=Lx,
+    delta=delta,
+    c=c,
+    d0=d0
+)
 
 lij = np.array(G.edges())
 I = lij[:, 0]

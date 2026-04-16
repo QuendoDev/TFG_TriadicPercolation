@@ -2,6 +2,7 @@ import random
 import networkx as nx
 import numpy as np
 
+import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 from scipy.stats import circmean, circstd
 
@@ -622,6 +623,94 @@ def random_coupled_rings_netw_PBC(N: int, Lx: float, num_rings: int, delta: floa
     return nodes, G, adj
 
 
+def coupled_rings_structural_network(N_per_ring: int, num_rings: int, Lx: float, delta: float, c: float,
+                                     d0: float, cutoff_factor: float = 5.0) -> tuple:
+    """
+    Generate a structural network of coupled rings maintaining density per ring,
+    with Periodic Boundary Conditions (PBC) in both X and Y axes.
+
+    :param N_per_ring: int, number of nodes in each 1D ring
+    :param num_rings: int, total number of coupled rings
+    :param Lx: float, length of the periodic boundary box in the X axis
+    :param delta: float, vertical separation between adjacent rings
+    :param c: float, base connectivity probability
+    :param d0: float, decay length of the connectivity
+    :param cutoff_factor: float, factor to limit distance calculations for optimization
+    :return: tuple, (nodes (N_tot, 2) array, G nx.Graph, adj (N_tot, N_tot) sparse bool matrix)
+    """
+    # ---------------------------------------------------------
+    # 1. GENERATE COORDINATES
+    # ---------------------------------------------------------
+    N_tot = N_per_ring * num_rings
+    Ly = num_rings * delta  # Total Y length needed for PBC in Y
+
+    # X is uniformly random, Y is fixed per ring (0, delta, 2*delta...)
+    X = np.random.rand(N_tot) * Lx
+    Y = np.repeat(np.arange(num_rings) * delta, N_per_ring)
+
+    nodes = np.column_stack((X, Y))
+
+    # ---------------------------------------------------------
+    # 2. FIND POSSIBLE PAIRS AND ESTABLISH LINKS
+    # ---------------------------------------------------------
+    cutoff_dist = cutoff_factor * d0
+    I, J = [], []
+
+    for i in range(N_tot):
+        # -- Y DISTANCE --
+        if num_rings > 1:
+            dy = distance_PBC_1D_pair(Y[i], Y, Ly)
+        else:
+            dy = np.abs(Y[i] - Y)
+
+        # Fast 1D filter: discard nodes too far in Y before doing heavy math
+        valid_y_mask = dy <= cutoff_dist
+
+        # Discard previous nodes (j <= i) to avoid duplicate edges and ensure upper triangular adj
+        valid_y_mask[:i + 1] = False
+
+        # Get the actual indices of surviving candidates
+        valid_indices = np.where(valid_y_mask)[0]
+
+        if len(valid_indices) == 0:
+            continue
+
+        # -- X DISTANCE --
+        dx = distance_PBC_1D_pair(X[i], X[valid_indices], Lx)
+
+        # -- TOTAL EUCLIDEAN DISTANCE --
+        dist = np.sqrt(np.multiply(dx, dx) + np.multiply(dy[valid_indices], dy[valid_indices]))
+
+        # -- FINAL CIRCULAR CUTOFF FILTER --
+        final_mask = dist <= cutoff_dist
+        final_indices = valid_indices[final_mask]
+        final_dists = dist[final_mask]
+
+        # -- PROBABILITY THROW --
+        if len(final_indices) > 0:
+            p_ij = c * np.exp(-final_dists / d0)
+            connected_mask = np.random.rand(len(p_ij)) < p_ij
+
+            connected_j = final_indices[connected_mask]
+
+            # Store edges
+            I.extend([i] * len(connected_j))
+            J.extend(connected_j)
+
+    # ---------------------------------------------------------
+    # 3. BUILD GRAPH AND SPARSE MATRIX
+    # ---------------------------------------------------------
+    # Create nx graph object
+    G = nx.Graph()
+    G.add_nodes_from(range(N_tot))
+    G.add_edges_from(zip(I, J))
+
+    # Create adjacency matrix (upper triangular, sparse boolean)
+    adj = csr_matrix((np.ones(len(I), dtype=bool), (I, J)), shape=(N_tot, N_tot))
+
+    return nodes, G, adj
+
+
 def itera_rings(Lx: float, statenode1: np.ndarray, nodes: np.ndarray, links: np.ndarray,
                 I: np.ndarray, J: np.ndarray, adjpos: np.ndarray, adjneg: np.ndarray, p: float) -> tuple:
     """
@@ -680,3 +769,24 @@ def itera_rings(Lx: float, statenode1: np.ndarray, nodes: np.ndarray, links: np.
 
     RT = np.asarray([ngn, ag2_len, ag3_len]) * 1. / N
     return RT, agn, [mean1, std1, mean2, std2, mean3, std3]
+
+
+# =============================================================================
+# SECTION 5: UTILITIES
+# =============================================================================
+def calculate_cutoff_distance(c: float, d0: float, p_min: float = 1e-4) -> float:
+    """
+    Calculate the cutoff distance beyond which the connection probability
+    falls below a specified minimum threshold.
+
+    :param c: float, base connection probability (probability at distance 0)
+    :param d0: float, structural decay length
+    :param p_min: float, minimum probability threshold to consider a link possible (default 0.01%)
+    :return: float, the maximum distance (cutoff) to evaluate
+    """
+    # If the selected threshold is bigger than the maximum probability, cutoff is 0
+    if p_min >= c:
+        return 0.0
+
+    cutoff_dist = -d0 * np.log(p_min / c)
+    return cutoff_dist
