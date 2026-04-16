@@ -56,7 +56,7 @@ elif geometry == 'RC':    # Rectangular
 # SECTION 2: DIRECTORY SETUP
 # =============================================================================
 # Create a unique directory name based on the core parameters and the seed
-dir_name = (f'results_{geometry}{RC_factor}_p{p:.2f}_N{N}_T{Tmax}_rho{density}_dr{dr:.2f}_d0{d0:.2f}'
+dir_name = (f'results/{geometry}{RC_factor}_p{p:.2f}_N{N}_T{Tmax}_rho{density}_dr{dr:.2f}_d0{d0:.2f}'
             f'_cpos{cpos:.2f}_cneg{cneg:.2f}_c{c:.2f}_seed{seed}/')
 
 if not os.path.exists(dir_name):

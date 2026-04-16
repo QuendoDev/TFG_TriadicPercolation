@@ -68,7 +68,7 @@ except ValueError:
 # CONFIGURATION
 # =============================================================================
 # Base directory where all 'results_1D_...' folders are located
-base_dir = "./"
+base_dir = "./results/"
 # Transient time (iterations to ignore for steady-state calculations)
 TT = 1
 

@@ -6,11 +6,8 @@ __pycache__/
 # Archivos de PyCharm
 .idea/
 
-# Carpetas de resultados de simulaciones (para no subir gigas de datos)
-calibration_RINGS_*/
-results_*/
-sweep_DELTA_*/
-global_*/
+# Carpetas de resultados de simulaciones
+results/
 *.csv
 *.png
 
