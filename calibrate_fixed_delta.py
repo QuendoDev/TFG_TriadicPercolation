@@ -16,7 +16,7 @@ import triadic_library as triadic
 # SECTION 1: PARAMETER READING & INITIALIZATION
 # =============================================================================
 # The script expects 7 mandatory arguments and 3 optional from the console.
-# Example command: python calibration_rings.py 1000 200.0 0.07 0.2 15 0.2 42 125 True 12
+# Example command: python calibrate_fixed_delta.py 1000 200.0 0.07 0.2 15 0.2 42 125 True 12
 # The order is: N_per_ring density_1D c d0_base loop_max_rings delta_factor seed [target_rings] [use_parallel] [n_jobs]
 
 try:
@@ -34,7 +34,7 @@ try:
     n_jobs = int(sys.argv[10]) if len(sys.argv) > 10 else 1
 except IndexError:
     print(
-        "Error: Missing arguments. Usage: python calibration_rings.py N_per_ring density c d0_base loop_max_rings "
+        "Error: Missing arguments. Usage: python calibrate_fixed_delta.py N_per_ring density c d0_base loop_max_rings "
         "delta_factor seed [target_rings] [use_parallel] [n_jobs]\n"
         "(Pass '0' for target_rings if you want to skip it but use parallel flags)"
     )
@@ -56,8 +56,8 @@ delta = delta_factor * d0_base
 # =============================================================================
 # SECTION 2: DIRECTORY SETUP & LOGGER
 # =============================================================================
-dir_name = (f'calibration_RINGS_loop{loop_max_rings}_target{target_rings}_N{N_per_ring}_dens{density}_c{c}_d0base'
-            f'{d0_base}_dfact{delta_factor}'
+dir_name = (f'results/calibration_RINGS_loop{loop_max_rings}_target{target_rings}_N{N_per_ring}_dens{density}_c{c}'
+            f'_d0base{d0_base}_dfact{delta_factor}'
             f'_seed{seed}/')
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
