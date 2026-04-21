@@ -67,7 +67,7 @@ L = np.asarray([Lx, Ly])
 # =============================================================================
 # SECTION 2: DIRECTORY SETUP
 # =============================================================================
-dir_name = (f'results/RINGS_R{num_rings}_p{p:.2f}_N{N}_T{Tmax}_rho{density}_dr{dr:.2f}_d0{d0:.2f}'
+dir_name = (f'results/scalable/R{num_rings}_p{p:.2f}_N{N}_T{Tmax}_rho{density}_dr{dr:.2f}_d0{d0:.2f}'
             f'_cpos{cpos:.2f}_cneg{cneg:.2f}_c{c:.2f}_dfact{delta_factor:.2f}_seed{seed}/')
 
 if not os.path.exists(dir_name):

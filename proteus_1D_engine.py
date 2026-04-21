@@ -59,7 +59,7 @@ L = float(N) / density
 # SECTION 2: DIRECTORY SETUP
 # =============================================================================
 # The base directory now contains only the physical parameters
-base_dir_name = f'results/1D_N{N}_T{Tmax}_p{p:.2f}_c{c}_cpos{cpos}_cneg{cneg}_d0{d0:.2f}_dr{dr:.2f}'
+base_dir_name = f'results/1D/N{N}_T{Tmax}_p{p:.2f}_c{c}_cpos{cpos}_cneg{cneg}_d0{d0:.2f}_dr{dr:.2f}'
 if not os.path.exists(base_dir_name):
     os.makedirs(base_dir_name, exist_ok=True)
 

@@ -56,7 +56,7 @@ Ly_fixed = Lx_fixed
 # =============================================================================
 # SECTION 2: DIRECTORY SETUP & LOGGER
 # =============================================================================
-dir_name = (f'results/refinement_Ntot{N_total}_maxR{max_rings}_dens{density_1D_base}_c{c}'
+dir_name = (f'results/calibrate/ref_Ntot{N_total}_maxR{max_rings}_dens{density_1D_base}_c{c}'
             f'_seed{seed}/')
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)

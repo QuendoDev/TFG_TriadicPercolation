@@ -56,7 +56,7 @@ delta = delta_factor * d0_base
 # =============================================================================
 # SECTION 2: DIRECTORY SETUP & LOGGER
 # =============================================================================
-dir_name = (f'results/calibration_RINGS_loop{loop_max_rings}_target{target_rings}_N{N_per_ring}_dens{density}_c{c}'
+dir_name = (f'results/calibrate/fdelta_loop{loop_max_rings}_target{target_rings}_N{N_per_ring}_dens{density}_c{c}'
             f'_d0base{d0_base}_dfact{delta_factor}'
             f'_seed{seed}/')
 if not os.path.exists(dir_name):

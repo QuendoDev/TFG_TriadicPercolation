@@ -108,7 +108,7 @@ def get_frames_interactive(Tmax):
 # CONFIGURATION
 # =============================================================================
 # Define the target folder you want to visualize
-target_folder = "./results/RC1.0_p0.70_N10000_T1000_rho100.0_dr0.25_d00.25_cpos0.20_cneg0.20_c0.40_seed42"
+target_folder = "./results/"
 
 # =============================================================================
 # 1. LOAD DATA & REBUILD EXACT NETWORK USING THE SEED

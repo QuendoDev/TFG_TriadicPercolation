@@ -29,7 +29,7 @@ Lx = N_per_ring / density
 num_rings = 2  # We fix it to 2 rings to study the pure 1D -> 2D transition
 
 # Create directory
-dir_name = f'results/sweep_DELTA_N{N_per_ring}_dens{density}_c{c}_d0base{d0_base}_seed{seed}/'
+dir_name = f'results/sweep_delta/N{N_per_ring}_dens{density}_c{c}_d0base{d0_base}_seed{seed}/'
 os.makedirs(dir_name, exist_ok=True)
 
 print("=" * 60)

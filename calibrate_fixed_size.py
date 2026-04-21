@@ -56,7 +56,7 @@ Ly_fixed = Lx_fixed
 # SECTION 2: DIRECTORY SETUP & LOGGER
 # =============================================================================
 # Save everything inside the general 'results/' folder to keep the root directory clean
-dir_name = (f'results/continuum_RINGS_maxR{max_rings}_N{N_per_ring}_dens{density}_c{c}_d0base'
+dir_name = (f'results/calibrate/fsize_maxR{max_rings}_N{N_per_ring}_dens{density}_c{c}_d0base'
             f'{d0_base}_seed{seed}/')
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
