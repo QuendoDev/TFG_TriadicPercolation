@@ -7,6 +7,22 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
+#
+# - en caso de que en los parametros haya una lista (o un valor unico) de semillas, uso esas, sino, genero 5 semillas
+# para los parametros que se hayan introducido (o en caso de que el comando tenga de parametro literalmente escrito
+# num=<numero>, genero ese numero de semillas)
+#
+# - en la carpeta que antes incluia en el nombre la semilla, la quito, y creo una carpeta para cada semilla, es decir
+# quedaria algo como results/<nombre con los parametros como ahora pero sin semilla>/seed=<semilla>
+#
+# - simulo una semilla cada vez (no se como cambiaria el uso de RAM, en las simulaciones de 1D actuales estoy usando
+# 4GB)
+#
+# - guardo los resultados de cada semilla (los datos, ya que la simulacion se correra en el superordenador proteus, y
+# las graficas las genero localmente)
+#
+# - modificar la logica del analisis local para sacar las graficas que saco ahora mismo pero teniendo en cuenta el
+# cambio de path y que ahora quiero promediar las semillas y generar barras de error donde sea necesario
 
 # =============================================================================
 # GLOBAL ANALYSIS SETUP
@@ -102,19 +118,40 @@ steady_state_distances_RINGS = []
 # List for the all-N RINGS fractal graph
 global_fractal_data_RINGS = []
 
-# Find all simulation result folders (both 1D and 2D geometries)
-result_folders_all = glob.glob(os.path.join(base_dir, "results_*"))
+# Find all simulation result folders by searching the summary_metrics.json
+# 1. List all items inside the base directory
+try:
+    all_items = [os.path.join(base_dir, d) for d in os.listdir(base_dir)]
+except FileNotFoundError:
+    print(f"Error: The directory {base_dir} does not exist.")
+    exit()
 
-# Filter out anything that isn't a directory (like files) or the global_figures folder
-result_folders = [f for f in result_folders_all if os.path.isdir(f) and "global" not in os.path.basename(f)]
+# 2. Filter using three safety conditions:
+#    - Must be a directory (os.path.isdir)
+#    - Must NOT be a global analysis folder ("global" not in name)
+#    - Must be a valid simulation (contains 'summary_metrics.json')
+result_folders = [
+    f for f in all_items
+    if os.path.isdir(f)
+       and "global" not in os.path.basename(f)
+       and os.path.exists(os.path.join(f, "summary_metrics.json"))
+]
+
+if not result_folders:
+    print(f"No valid simulation folders found in {base_dir}.")
+    print("Ensure that the folders contain the 'summary_metrics.json' file.")
+    exit()
+
+# Sort alphabetically for consistent analysis
+result_folders = sorted(result_folders)
 
 if not result_folders:
     print("No result folders found. Please check the base_dir.")
     exit()
 
-# Count how many are 1D, RINGS, and 2D
-count_1d = sum(1 for folder in result_folders if "results_1D_" in os.path.basename(folder))
-count_rings = sum(1 for folder in result_folders if "results_RINGS_" in os.path.basename(folder))
+# Count how many are 1D, RINGS, and 2D based on folder names or internal logic
+count_1d = sum(1 for folder in result_folders if "1D" in os.path.basename(folder))
+count_rings = sum(1 for folder in result_folders if "RINGS" in os.path.basename(folder))
 count_2d = len(result_folders) - count_1d - count_rings
 
 print("=" * 60)
@@ -327,9 +364,35 @@ for folder in sorted(result_folders):
     # ---------------------------------------------------------
     print("-> Generating Degree Distributions...")
 
+
+    def get_integer_bins(min_val, max_val, max_bins=30):
+        """
+        Generates bin edges perfectly centered on integers.
+        If the range is too large, it groups integers to keep a maximum number of bins.
+
+        :param min_val: int, minimum value in the data
+        :param max_val: int, maximum value in the data
+        :param max_bins: int, maximum number of bins
+        :return: np.array, bin edges for histogram
+        """
+        rng = max_val - min_val
+        if rng == 0:
+            return np.array([min_val - 0.5, min_val + 0.5])
+        if rng <= max_bins:
+            # One bin per exact integer (perfect for small degrees)
+            return np.arange(min_val - 0.5, max_val + 1.5, 1)
+        else:
+            # Group integers (e.g., step of 5 or 10) to avoid 250 microscopic bars
+            step = int(np.ceil(rng / max_bins))
+            return np.arange(min_val - 0.5, max_val + step + 0.5, step)
+
     # Structural Degree (physically connected nodes)
+    min_k = min(deg_arr['k_real_array'])
+    max_k = max(deg_arr['k_real_array'])
+    bins_k = get_integer_bins(min_k, max_k)
+
     plt.figure(figsize=(6, 4))
-    sns.histplot(deg_arr['k_real_array'], bins=30, color='skyblue', kde=True, stat='density')
+    sns.histplot(deg_arr['k_real_array'], bins=bins_k, color='skyblue', kde=True, stat='density')
     plt.axvline(deg_sum['k_theo'], color='red', linestyle='--', linewidth=2,
                 label=f"Theo Mean: {deg_sum['k_theo']:.1f}")
     plt.title("Structural Degree Distribution P(k)")
@@ -341,13 +404,14 @@ for folder in sorted(result_folders):
     plt.close()
 
     # Regulatory Out-Degree (nodes regulating links)
-    plt.figure(figsize=(6, 4))
     min_out = min(min(deg_arr['kappa_out_pos_array']), min(deg_arr['kappa_out_neg_array']))
     max_out = max(max(deg_arr['kappa_out_pos_array']), max(deg_arr['kappa_out_neg_array']))
-    mis_bins_out = np.linspace(min_out, max_out, 30)
-    sns.histplot(deg_arr['kappa_out_pos_array'], bins=mis_bins_out, color='green', alpha=0.5, kde=True, stat='density',
+    bins_out = get_integer_bins(min_out, max_out)
+
+    plt.figure(figsize=(6, 4))
+    sns.histplot(deg_arr['kappa_out_pos_array'], bins=bins_out, color='green', alpha=0.5, kde=True, stat='density',
                  label='Positive (+)')
-    sns.histplot(deg_arr['kappa_out_neg_array'], bins=mis_bins_out, color='red', alpha=0.5, kde=True, stat='density',
+    sns.histplot(deg_arr['kappa_out_neg_array'], bins=bins_out, color='red', alpha=0.5, kde=True, stat='density',
                  label='Negative (-)')
     plt.axvline(deg_sum['kappa_out_pos_theo'], color='darkgreen', linestyle='--', linewidth=2, label='Theo. Mean (+)')
     plt.axvline(deg_sum['kappa_out_neg_theo'], color='darkred', linestyle='--', linewidth=2, label='Theo. Mean (-)')
@@ -360,13 +424,14 @@ for folder in sorted(result_folders):
     plt.close()
 
     # Regulatory In-Degree (links regulated by nodes)
+    min_in = min(min(deg_arr['kappa_in_pos_array']), min(deg_arr['kappa_in_neg_array']))
+    max_in = max(max(deg_arr['kappa_in_pos_array']), max(deg_arr['kappa_in_neg_array']))
+    bins_in = get_integer_bins(min_in, max_in)
+
     plt.figure(figsize=(6, 4))
-    min_out = min(min(deg_arr['kappa_in_pos_array']), min(deg_arr['kappa_in_neg_array']))
-    max_out = max(max(deg_arr['kappa_in_pos_array']), max(deg_arr['kappa_in_neg_array']))
-    mis_bins_out = np.linspace(min_out, max_out, 30)
-    sns.histplot(deg_arr['kappa_in_pos_array'], bins=mis_bins_out, color='green', alpha=0.5, kde=True, stat='density',
+    sns.histplot(deg_arr['kappa_in_pos_array'], bins=bins_in, color='green', alpha=0.5, kde=True, stat='density',
                  label='Positive (+)')
-    sns.histplot(deg_arr['kappa_in_neg_array'], bins=mis_bins_out, color='red', alpha=0.5, kde=True, stat='density',
+    sns.histplot(deg_arr['kappa_in_neg_array'], bins=bins_in, color='red', alpha=0.5, kde=True, stat='density',
                  label='Negative (-)')
     plt.axvline(deg_sum['kappa_in_pos_theo'], color='darkgreen', linestyle='--', linewidth=2, label='Theo. Mean (+)')
     plt.axvline(deg_sum['kappa_in_neg_theo'], color='darkred', linestyle='--', linewidth=2, label='Theo. Mean (-)')
