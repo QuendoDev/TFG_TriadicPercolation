@@ -19,6 +19,7 @@ import triadic_library as triadic
 # python proteus_1D_engine.py 10000 400 0.00 1000.0 0.2 0.2 0.03 0.03 0.07 42
 # python proteus_1D_engine.py 10000 400 0.00 1000.0 0.2 0.2 0.03 0.03 0.07 42,43,44
 # python proteus_1D_engine.py 10000 400 0.00 1000.0 0.2 0.2 0.03 0.03 0.07 num=5
+# Usage: python proteus_1D_engine.py N Tmax p density d0 dr cpos cneg c [seed|seed1,seed2|num=X]
 
 # Track the total time
 init_time = time.time()
@@ -199,7 +200,7 @@ for current_seed in seeds:
     print("=" * 60 + "\n")
 
     # Shortest paths (Topological distances at t=0)
-    path_lengths_t0, avg_distance_t0 = triadic.get_topological_distances(G0, sample_size=500)
+    path_lengths_t0, avg_distance_t0 = triadic.get_topological_distances(G0, sample_size=2500)
     print(f"-> Structural baseline average distance: {avg_distance_t0:.2f} hops.")
 
     # Fractal dimension (Hausdorff Mass-Radius scaling)
@@ -313,7 +314,7 @@ for current_seed in seeds:
     if len(G_active.nodes()) > 0:
         largest_cc_nodes = max(nx.connected_components(G_active), key=len)
         G0_active = G_active.subgraph(largest_cc_nodes)
-        path_lengths_tfinal, avg_distance_tfinal = triadic.get_topological_distances(G0_active, sample_size=500)
+        path_lengths_tfinal, avg_distance_tfinal = triadic.get_topological_distances(G0_active, sample_size=2500)
     else:
         path_lengths_tfinal = []
         avg_distance_tfinal = 0.0

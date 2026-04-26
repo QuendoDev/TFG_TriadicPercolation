@@ -16,9 +16,10 @@ import triadic_library as triadic
 # =============================================================================
 # This script expects 11 parameters and the seed initializer
 # Example commands:
-# python proteus_2D_engine.py 10000 500 0.00 100.0 0.25 0.25 0.2 0.2 0.4 1.0 RC 42
-# python proteus_2D_engine.py 10000 500 0.00 100.0 0.25 0.25 0.2 0.2 0.4 1.0 RC 42,43,44
-# python proteus_2D_engine.py 10000 500 0.00 100.0 0.25 0.25 0.2 0.2 0.4 1.0 RC num=5
+# python proteus_2D_engine.py 10000 1000 0.00 100.0 0.25 0.25 0.2 0.2 0.4 1.0 RC 42
+# python proteus_2D_engine.py 10000 1000 0.00 100.0 0.25 0.25 0.2 0.2 0.4 1.0 RC 42,43,44
+# python proteus_2D_engine.py 10000 1000 0.00 100.0 0.25 0.25 0.2 0.2 0.4 1.0 RC num=5
+# Usage: python proteus_2D_engine.py N Tmax p density d0 dr cpos cneg c RC_factor geometry [seed|seed1,seed2|num=X]
 
 # Track the total time
 init_time = time.time()
