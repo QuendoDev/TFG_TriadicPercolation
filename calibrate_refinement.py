@@ -18,7 +18,7 @@ import triadic_library as triadic
 # This script performs a "Refinement Limit" calibration.
 # It maintains N_total and Ly constant, while increasing the number of rings (R).
 # As R increases, N_per_ring decreases and delta decreases, keeping 2D density fixed.
-# Example command: python calibrate_refinement.py 10000 200.0 0.07 0.2 50 42 True 12
+# Example command: python calibrate_refinement.py 10000 200.0 0.07 0.2 60 42 True 12
 
 try:
     N_total = int(sys.argv[1])  # Total budget of nodes for the whole system
