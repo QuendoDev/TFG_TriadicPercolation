@@ -711,6 +711,201 @@ def coupled_rings_structural_network(N_per_ring: int, num_rings: int, Lx: float,
     return nodes, G, adj
 
 
+def coupled_rings_structural_network_fixed_N(N_total: int, num_rings: int, Lx: float, Ly: float, c: float,
+                                             d0: float, cutoff_factor: float = 5.0) -> tuple:
+    """
+    Generate a structural network of coupled rings maintaining EXACTLY N_total nodes,
+    distributing any remainder nodes evenly across the first few rings to keep density constant.
+
+    :param N_total: int, total number of coupled rings
+    :param num_rings: int, total number of coupled rings
+    :param Lx: float, length of the periodic boundary box in the X axis
+    :param Ly: float, total length in the Y axis (should be >= num_rings * delta)
+    :param c: float, base connectivity probability
+    :param d0: float, decay length of the connectivity
+    :param cutoff_factor: float, factor to limit distance calculations for optimization
+    :return: tuple, (nodes (N_total, 2) array, G nx.Graph, adj (N_total, N_total) sparse bool matrix)
+    """
+    # ---------------------------------------------------------
+    # 1. DISTRIBUTE NODES AND GENERATE COORDINATES
+    # ---------------------------------------------------------
+    # Derive delta mathematically from the strictly fixed Ly
+    delta = Ly / num_rings
+
+    # Distribute nodes as evenly as possible to avoid density gaps
+    base_nodes_per_ring = N_total // num_rings
+    remainder = N_total % num_rings
+
+    nodes_per_ring = np.full(num_rings, base_nodes_per_ring)
+    nodes_per_ring[:remainder] += 1  # Add 1 node to the first 'remainder' rings
+
+    # X is uniformly random, Y is fixed per ring based on the exact node distribution
+    X = np.random.rand(N_total) * Lx
+    Y = np.repeat(np.arange(num_rings) * delta, nodes_per_ring)
+
+    nodes = np.column_stack((X, Y))
+
+    # ---------------------------------------------------------
+    # 2. FIND POSSIBLE PAIRS AND ESTABLISH LINKS
+    # ---------------------------------------------------------
+    cutoff_dist = cutoff_factor * d0
+    I, J = [], []
+
+    for i in range(N_total):
+        # -- Y DISTANCE --
+        if num_rings > 1:
+            dy = distance_PBC_1D_pair(Y[i], Y, Ly)
+        else:
+            dy = np.abs(Y[i] - Y)
+
+        valid_y_mask = dy <= cutoff_dist
+        valid_y_mask[:i + 1] = False
+        valid_indices = np.where(valid_y_mask)[0]
+
+        if len(valid_indices) == 0:
+            continue
+
+        # -- X DISTANCE --
+        dx = distance_PBC_1D_pair(X[i], X[valid_indices], Lx)
+
+        # -- TOTAL EUCLIDEAN DISTANCE --
+        dist = np.sqrt(np.multiply(dx, dx) + np.multiply(dy[valid_indices], dy[valid_indices]))
+
+        # -- FINAL CIRCULAR CUTOFF FILTER --
+        final_mask = dist <= cutoff_dist
+        final_indices = valid_indices[final_mask]
+        final_dists = dist[final_mask]
+
+        # -- PROBABILITY THROW --
+        if len(final_indices) > 0:
+            p_ij = c * np.exp(-final_dists / d0)
+            connected_mask = np.random.rand(len(p_ij)) < p_ij
+            connected_j = final_indices[connected_mask]
+
+            I.extend([i] * len(connected_j))
+            J.extend(connected_j)
+
+    # ---------------------------------------------------------
+    # 3. BUILD GRAPH AND SPARSE MATRIX
+    # ---------------------------------------------------------
+    G = nx.Graph()
+    G.add_nodes_from(range(N_total))
+    G.add_edges_from(zip(I, J))
+
+    adj = csr_matrix((np.ones(len(I), dtype=bool), (I, J)), shape=(N_total, N_total))
+
+    return nodes, G, adj
+
+
+def midpoints_rings_PBC(nodes: np.ndarray, Lx: float, Ly: float, I: np.ndarray, J: np.ndarray) -> tuple:
+    """
+    Compute the midpoints of the links in the coupled rings geometry with PBC in both axes.
+
+    :param nodes: numpy array (N, 2), coordinates of the nodes
+    :param Lx: float, length of the periodic box in the X axis
+    :param Ly: float, length of the periodic box in the Y axis
+    :param I: numpy array (NL,), indices of the first nodes of each link
+    :param J: numpy array (NL,), indices of the second nodes of each link
+    :return: tuple (xl, NL), where xl is (NL, 2) midpoint coordinates and NL is the number of links
+    """
+    xl2 = np.stack((np.mod(0.5 * (Lx + nodes[I, 0] + nodes[J, 0]), Lx),
+                    np.mod(0.5 * (Ly + nodes[I, 1] + nodes[J, 1]), Ly))).T
+
+    NL = I.shape[0]
+    xl1 = 0.5 * (nodes[I] + nodes[J])
+
+    # Distance in X and Y to determine the correct midpoint under PBC
+    dist1x = distance_PBC_1D_pair(nodes[I, 0], xl1[:, 0], Lx)
+    dist2x = distance_PBC_1D_pair(nodes[I, 0], xl2[:, 0], Lx)
+
+    dist1y = distance_PBC_1D_pair(nodes[I, 1], xl1[:, 1], Ly)
+    dist2y = distance_PBC_1D_pair(nodes[I, 1], xl2[:, 1], Ly)
+
+    condx = dist1x < dist2x
+    condy = dist1y < dist2y
+    cond = np.stack((condx, condy)).T
+
+    # Final coordinates selection based on shortest distance
+    xl = xl1 * cond + xl2 * (np.logical_not(cond))
+
+    return xl, NL
+
+
+def coupled_rings_regulatory_network(nodes: np.ndarray, links: np.ndarray, Lx: float, Ly: float,
+                                     dr: float, cpos: float, cneg: float, cutoff_factor: float = 5.0) -> tuple:
+    """
+    Generate positive and negative regulatory networks for coupled rings using fast sparse matrices.
+
+    :param nodes: numpy array (N, 2), coordinates of the regulator nodes
+    :param links: numpy array (NL, 2), coordinates of the target links (midpoints)
+    :param Lx: float, length of the periodic box in the X axis
+    :param Ly: float, length of the periodic box in the Y axis
+    :param dr: float, decay length of the regulation
+    :param cpos: float, base probability for positive regulation
+    :param cneg: float, base probability for negative regulation
+    :param cutoff_factor: float, factor to limit distance calculations for optimization
+    :return: tuple (adjpos, adjneg), both being (N, NL) sparse boolean adjacency matrices
+    """
+    N = nodes.shape[0]
+    NL = links.shape[0]
+
+    cutoff_dist = cutoff_factor * dr
+
+    # Using lists to build sparse matrices efficiently without exploding RAM
+    I_pos, J_pos = [], []
+    I_neg, J_neg = [], []
+
+    for i in range(N):
+        node_x = nodes[i, 0]
+        node_y = nodes[i, 1]
+
+        # Fast 1D filter in Y: discard links too far away vertically
+        dy = distance_PBC_1D_pair(node_y, links[:, 1], Ly)
+        valid_y_mask = dy <= cutoff_dist
+        valid_indices = np.where(valid_y_mask)[0]
+
+        if len(valid_indices) == 0:
+            continue
+
+        # Fast 1D filter in X for surviving links
+        dx = distance_PBC_1D_pair(node_x, links[valid_indices, 0], Lx)
+
+        # Total Euclidean distance
+        dist = np.sqrt(np.multiply(dx, dx) + np.multiply(dy[valid_indices], dy[valid_indices]))
+
+        # Final circular cutoff filter
+        final_mask = dist <= cutoff_dist
+        final_indices = valid_indices[final_mask]
+        final_dists = dist[final_mask]
+
+        if len(final_indices) > 0:
+            # Calculate probabilities only for links within reach
+            PLpos = cpos * np.exp(-final_dists / dr)
+            PLneg = cneg * np.exp(-final_dists / dr)
+
+            ran2 = np.random.rand(len(final_indices))
+            if cpos + cneg > 1:
+                ran2 = ran2 * (cpos + cneg)
+
+            # Positive regulation assignments
+            pos_mask = PLpos > ran2
+            connected_j_pos = final_indices[pos_mask]
+            I_pos.extend([i] * len(connected_j_pos))
+            J_pos.extend(connected_j_pos)
+
+            # Negative regulation assignments
+            neg_mask = (ran2 > PLpos) & (ran2 < (PLpos + PLneg))
+            connected_j_neg = final_indices[neg_mask]
+            I_neg.extend([i] * len(connected_j_neg))
+            J_neg.extend(connected_j_neg)
+
+    # Build sparse CSR matrices directly
+    adjpos = csr_matrix((np.ones(len(I_pos), dtype=bool), (I_pos, J_pos)), shape=(N, NL))
+    adjneg = csr_matrix((np.ones(len(I_neg), dtype=bool), (I_neg, J_neg)), shape=(N, NL))
+
+    return adjpos, adjneg
+
+
 def itera_rings(Lx: float, statenode1: np.ndarray, nodes: np.ndarray, links: np.ndarray,
                 I: np.ndarray, J: np.ndarray, adjpos: np.ndarray, adjneg: np.ndarray, p: float) -> tuple:
     """
