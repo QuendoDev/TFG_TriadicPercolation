@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import time
 
@@ -18,7 +19,7 @@ import triadic_library as triadic
 # This script performs a "Refinement Limit" calibration.
 # It maintains N_total and Ly constant, while increasing the number of rings (R).
 # As R increases, N_per_ring decreases and delta decreases, keeping 2D density fixed.
-# Example command: python calibrate_refinement.py 10000 200.0 0.07 0.2 60 42 True 12
+# Example command: python calibrate_refinement.py 10000 200.0 0.07 0.2 60 num=5 True 12
 
 try:
     N_total = int(sys.argv[1])  # Total budget of nodes for the whole system
@@ -26,7 +27,16 @@ try:
     c = float(sys.argv[3])  # Base probability for structural connections
     d0_base = float(sys.argv[4])  # Target 1D d0 (baseline for ring 1)
     max_rings = int(sys.argv[5])  # Maximum resolution (rings) to test
-    seed = int(sys.argv[6])  # Random seed
+
+    # Seed logic
+    seed_arg = sys.argv[6]
+    if seed_arg.startswith('num='):
+        num_seeds = int(seed_arg.split('=')[1])
+        seeds = [random.randint(1, 999999) for _ in range(num_seeds)]
+    elif ',' in seed_arg:
+        seeds = [int(s) for s in seed_arg.split(',')]
+    else:
+        seeds = [int(seed_arg)]
 
     # Optional parameters handling
     use_parallel = sys.argv[7].lower() == 'true' if len(sys.argv) > 7 else False
@@ -34,7 +44,7 @@ try:
 except IndexError:
     print(
         "Error: Missing arguments. Usage: python calibrate_refinement.py N_total density_1D_base c d0_base max_rings "
-        "seed [use_parallel] [n_jobs]"
+        "[seed|seed1,seed2|num=X] [use_parallel] [n_jobs]"
     )
     sys.exit(1)
 
@@ -56,8 +66,8 @@ Ly_fixed = Lx_fixed
 # =============================================================================
 # SECTION 2: DIRECTORY SETUP & LOGGER
 # =============================================================================
-dir_name = (f'results/calibrate/ref/Ntot{N_total}_maxR{max_rings}_dens{density_1D_base}_c{c}'
-            f'_seed{seed}/')
+dir_name = (f'results/calibrate/ref/Ntot{N_total}_maxR{max_rings}_dens{density_1D_base}_c{c}_'
+            f'seeds{len(seeds)}/')
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
 
@@ -88,6 +98,7 @@ print("--- STARTING REFINEMENT LIMIT CALIBRATION ---")
 print(f"Fixed Budget    : N_total = {N_total} nodes")
 print(f"Fixed Universe  : Lx = {Lx_fixed:.2f}, Ly = {Ly_fixed:.2f} (Square)")
 print(f"Refinement      : Increasing R from 1 to {max_rings}")
+print(f"Ensemble Size    : {len(seeds)} seeds")
 print(f"Tolerance       : {tol:.4f}")
 print("=" * 60)
 
@@ -176,9 +187,9 @@ def find_optimal_d0(target_k: float, N_total: int, Lx: float, Ly: float, num_rin
 
 
 def process_refinement_step(r: int, target_k: float, N_total: int, Lx: float, Ly: float, c: float, d0_base: float,
-                            seed: int) -> dict:
+                            current_seed: int) -> dict:
     """
-    Worker for a single resolution step.
+    Worker for a single resolution step using a specific seed.
 
     :param r: int, current number of rings
     :param target_k: float, target <k>
@@ -187,17 +198,17 @@ def process_refinement_step(r: int, target_k: float, N_total: int, Lx: float, Ly
     :param Ly: float, fixed height
     :param c: float, constant
     :param d0_base: float, starting d0
-    :param seed: int, seed
+    :param current_seed: int, seed for this specific execution
     :return: dict with results
     """
     # Refinement Logic
     current_delta = Ly / r
 
-    logs = [f"\n--- Resolution R = {r} ---",
+    logs = [f"\n--- Res R = {r} | Seed = {current_seed} ---",
             f"  -> Params  : N_total = {N_total}, Delta = {current_delta:.6f}"]
 
     # Scaled Calibration
-    d0_opt, k_scaled, G_scaled, nodes = find_optimal_d0(target_k, N_total, Lx, Ly, r, c, d0_base, seed, tol)
+    d0_opt, k_scaled, G_scaled, nodes = find_optimal_d0(target_k, N_total, Lx, Ly, r, c, d0_base, current_seed, tol)
     logs.append(f"  -> Nodes generated: {G_scaled.number_of_nodes()} (Target: {N_total})")
     logs.append(f"  -> Found d0: {d0_opt:.6f} (k = {k_scaled:.4f})")
 
@@ -208,12 +219,14 @@ def process_refinement_step(r: int, target_k: float, N_total: int, Lx: float, Ly
 
     # Geometry & Isotropy
     frac_horiz, angles = compute_geometric_metrics(G_scaled, nodes, Lx, Ly)
+    mean_angle = np.mean(angles) if len(angles) > 0 else 0.0
+    std_angle = np.std(angles) if len(angles) > 0 else 0.0
     logs.append(f"  -> 2D Isotropy : {frac_horiz:.2f}% Horizontal Links")
 
     return {
-        'num_rings': r, 'delta': current_delta, 'n_total': N_total,
+        'num_rings': r, 'seed': current_seed, 'delta': current_delta, 'n_total': N_total,
         'd0_opt': d0_opt, 'k_scaled': k_scaled, 'dist_scaled': dist,
-        'frac_horiz': frac_horiz, 'angles': angles,
+        'frac_horiz': frac_horiz, 'mean_angle': mean_angle, 'std_angle': std_angle,
         'log_messages': "\n".join(logs)
     }
 
@@ -259,39 +272,53 @@ def compute_geometric_metrics(G: nx.Graph, nodes: np.ndarray, Lx: float, Ly: flo
 # SECTION 4: MAIN CALIBRATION LOOP
 # =============================================================================
 print("\n[Phase 1] Baseline (R=1, All nodes in 1 ring)...")
-np.random.seed(seed)
-nodes_base, G_base, _ = triadic.coupled_rings_structural_network_fixed_N(N_total, 1, Lx_fixed, Ly_fixed,
-                                                                         c, d0_base)
-print(f"-> Nodes generated in graph: {G_base.number_of_nodes()} (Target: {N_total})")
-target_k = np.mean([d for n, d in G_base.degree()])
-print(f"-> Target <k> established: {target_k:.4f}")
-
-# Compute geometry for baseline
-frac_horiz_base, angles_base = compute_geometric_metrics(G_base, nodes_base, Lx_fixed, Ly_fixed)
-print(f"-> Baseline 2D Isotropy: {frac_horiz_base:.2f}% Horizontal Links")
-
 results = []
-results.append({'num_rings': 1, 'delta': Ly_fixed, 'n_total': N_total, 'd0_opt': d0_base, 'k_scaled': target_k,
-                'dist_scaled': np.nan, 'frac_horiz': frac_horiz_base, 'angles': angles_base})
+target_k_dict = {}
+
+for s in seeds:
+    print(f"\n-> Baseline establishing with seed {s}...")
+    np.random.seed(s)
+    nodes_base, G_base, _ = triadic.coupled_rings_structural_network_fixed_N(N_total, 1, Lx_fixed, Ly_fixed,
+                                                                             c, d0_base)
+    print(f"-> Nodes generated in graph: {G_base.number_of_nodes()} (Target: {N_total})")
+    target_k = np.mean([d for n, d in G_base.degree()])
+    target_k_dict[s] = target_k
+    print(f"-> Target <k> established: {target_k:.4f}")
+
+    # Compute geometry for baseline
+    frac_horiz_base, angles_base = compute_geometric_metrics(G_base, nodes_base, Lx_fixed, Ly_fixed)
+    mean_ang_base = np.mean(angles_base) if len(angles_base) > 0 else 0.0
+    std_ang_base = np.std(angles_base) if len(angles_base) > 0 else 0.0
+    print(f"-> Baseline 2D Isotropy: {frac_horiz_base:.2f}% Horizontal Links")
+
+    results.append({'num_rings': 1, 'seed': s, 'delta': Ly_fixed, 'n_total': N_total, 'd0_opt': d0_base,
+                    'k_scaled': target_k, 'dist_scaled': np.nan, 'frac_horiz': frac_horiz_base,
+                    'mean_angle': mean_ang_base, 'std_angle': std_ang_base})
+
+print(f"-> Baselines established across {len(seeds)} seeds.")
 
 print("\n[Phase 2] Refining Mesh...")
 rings_seq = list(range(2, max_rings + 1))
 
+tasks = [(r, s) for r in rings_seq for s in seeds]
+
 if use_parallel:
-    print(f"-> Dispatching {len(rings_seq)} tasks to Joblib (n_jobs={n_jobs})...")
+    print(f"-> Dispatching {len(tasks)} tasks to Joblib (n_jobs={n_jobs})...")
     print("   (Logs will appear in real-time as workers finish their rings)\n")
-    with Parallel(n_jobs=n_jobs, return_as="generator") as parallel:
-        gen = parallel(
-            delayed(process_refinement_step)(r, target_k, N_total, Lx_fixed, Ly_fixed, c, d0_base, seed) for r in
-            rings_seq)
-        for res in gen:
-            print(res['log_messages'])
-            del res['log_messages']
-            results.append(res)
-    results.sort(key=lambda x: x['num_rings'])
+
+    executor = Parallel(n_jobs=n_jobs, return_as="generator")
+    gen = executor(
+        delayed(process_refinement_step)(r, target_k_dict[s], N_total, Lx_fixed, Ly_fixed, c, d0_base, s)
+        for r, s in tasks
+    )
+    for res in gen:
+        print(res['log_messages'])
+        del res['log_messages']
+        results.append(res)
+    results.sort(key=lambda x: (x['num_rings'], x['seed']))
 else:
-    for r in rings_seq:
-        res = process_refinement_step(r, target_k, N_total, Lx_fixed, Ly_fixed, c, d0_base, seed)
+    for r, s in tasks:
+        res = process_refinement_step(r, target_k_dict[s], N_total, Lx_fixed, Ly_fixed, c, d0_base, s)
         print(res['log_messages'])
         del res['log_messages']
         results.append(res)
@@ -301,15 +328,20 @@ else:
 # =============================================================================
 print("\n[Phase 3] Generating Refinement Plots...")
 df = pd.DataFrame(results)
-# Drop the massive 'angles' arrays before saving to CSV to prevent formatting errors and heavy files
-df_export = df.drop(columns=['angles'], errors='ignore')
-df_export.to_csv(os.path.join(dir_name, "refinement_data.csv"), index=False)
-fig_dir = os.path.join(dir_name, "figures");
+# Save raw data for all seeds
+df.to_csv(os.path.join(dir_name, "refinement_raw_data.csv"), index=False)
+
+# Group by ring resolution to calculate ensemble statistics
+df_agg = df.groupby('num_rings').agg(['mean', 'std'])
+rings_int = df_agg.index.values
+
+fig_dir = os.path.join(dir_name, "figures")
 os.makedirs(fig_dir, exist_ok=True)
 
-rings_int = np.arange(1, df['num_rings'].max() + 1)
+# We compute the overall mean target_k to draw the theoretical curves
+target_k_mean = float(np.mean(list(target_k_dict.values())))
 # Calculate theoretical curves for plotting
-d0_theo_curve = [theoretical_optimal_d0_refined(target_k, r, N_total, Lx_fixed, Ly_fixed, c) for r in rings_int]
+d0_theo_curve = [theoretical_optimal_d0_refined(target_k_mean, r, N_total, Lx_fixed, Ly_fixed, c) for r in rings_int]
 # Theoretical <k> if d0 was kept at the baseline (showing the drift caused by density changes)
 k_theo_unscaled = [theoretical_degree_refined(r, N_total, Lx_fixed, Ly_fixed, c, d0_base) for r in rings_int]
 
@@ -317,9 +349,9 @@ k_theo_unscaled = [theoretical_degree_refined(r, N_total, Lx_fixed, Ly_fixed, c,
 plt.figure(figsize=(8, 5))
 plt.plot(rings_int, k_theo_unscaled, color='crimson', linestyle='--', linewidth=2, zorder=1,
          label='Unscaled Theory (Fixed d0)')
-plt.plot(df['num_rings'], df['k_scaled'], marker='s', linestyle='', color='forestgreen',
-         label='Calibrated - Exp.')
-plt.axhline(target_k, color='black', linestyle=':', alpha=0.5, label=f'Target <k> ({target_k:.2f})')
+plt.errorbar(rings_int, df_agg['k_scaled']['mean'], yerr=df_agg['k_scaled']['std'], fmt='s',
+             color='forestgreen', ecolor='darkgreen', capsize=3, alpha=0.8, label='Calibrated (Mean ± Std)')
+plt.axhline(target_k_mean, color='black', linestyle=':', alpha=0.5, label=f'Target <k> ({target_k_mean:.2f})')
 plt.title("Degree Conservation across Resolution: Theory vs Experiment")
 plt.xlabel("Number of Rings (Resolution)")
 plt.ylabel("Average Structural Degree <k>")
@@ -332,10 +364,12 @@ plt.close()
 
 # 2. Scaling Law Plot (d0 vs Rings)
 plt.figure(figsize=(8, 5))
-plt.plot(df['num_rings'], df['d0_opt'], marker='D', linestyle='', color='indigo', markersize=6,
-         label='Optimal d0 (Bisection) - Exp.')
-plt.plot(rings_int, d0_theo_curve, color='orange', linestyle='-', linewidth=2.5, zorder=1,
-         label='Theoretical Optimal (Root Finding)')
+plt.fill_between(rings_int, df_agg['d0_opt']['mean'] - df_agg['d0_opt']['std'],
+                 df_agg['d0_opt']['mean'] + df_agg['d0_opt']['std'], color='indigo', alpha=0.2)
+plt.plot(rings_int, df_agg['d0_opt']['mean'], marker='D', linestyle='',
+         color='indigo', markersize=5, label='Optimal d0 (Bisection)')
+plt.plot(rings_int, d0_theo_curve, color='orange', linestyle='-',
+         linewidth=2.5, zorder=1, label='Theoretical Optimal (Root Finding)')
 plt.title("Structural Decay Scaling Law: Theory vs Experiment")
 plt.xlabel("Number of Rings (Resolution)")
 plt.ylabel("Optimal Decay Length (d0)")
@@ -348,7 +382,10 @@ plt.close()
 
 # 3. Topological Distance Plot
 plt.figure(figsize=(8, 5))
-plt.plot(df['num_rings'], df['dist_scaled'], marker='D', linestyle='-', color='darkcyan', linewidth=2)
+plt.fill_between(rings_int, df_agg['dist_scaled']['mean'] - df_agg['dist_scaled']['std'],
+                 df_agg['dist_scaled']['mean'] + df_agg['dist_scaled']['std'], color='darkcyan', alpha=0.2)
+plt.plot(rings_int, df_agg['dist_scaled']['mean'], marker='o', linestyle='-',
+         color='darkcyan', linewidth=2, label='Mean Path Length')
 plt.title("Topological Path Length Evolution")
 plt.xlabel("Number of Rings (Resolution)")
 plt.ylabel("Mean Shortest Path (Hops)")
@@ -360,7 +397,10 @@ plt.close()
 
 # 4. Directional Isotropy Plot
 plt.figure(figsize=(8, 5))
-plt.plot(df['num_rings'], df['frac_horiz'], marker='o', linestyle='-', color='purple', linewidth=2)
+plt.fill_between(rings_int, df_agg['frac_horiz']['mean'] - df_agg['frac_horiz']['std'],
+                 df_agg['frac_horiz']['mean'] + df_agg['frac_horiz']['std'], color='purple', alpha=0.2)
+plt.plot(rings_int, df_agg['frac_horiz']['mean'], marker='o', linestyle='-',
+         color='purple', linewidth=2, label='Horizontal Links (%)')
 plt.axhline(50.0, color='black', linestyle='--', alpha=0.7, label='Perfect 2D Isotropy (50%)')
 plt.title("Directional Isotropy Transition (1D to 2D)")
 plt.xlabel("Number of Rings (Resolution)")
@@ -374,28 +414,15 @@ plt.savefig(os.path.join(fig_dir, "plot_4_isotropy.png"), dpi=400)
 plt.close()
 
 # 5. Mean Angle Evolution
-mean_angles = []
-std_angles = []
-
-# Calculate the mean angle and standard deviation for each resolution
-for index, row in df.iterrows():
-    angs = row['angles']
-    if isinstance(angs, np.ndarray) and len(angs) > 0:
-        mean_angles.append(np.mean(angs))
-        std_angles.append(np.std(angs))
-    else:
-        # For R=1 (1D pure), all links are strictly 0 degrees
-        mean_angles.append(0.0)
-        std_angles.append(0.0)
-
-mean_angles = np.array(mean_angles)
-std_angles = np.array(std_angles)
-
 plt.figure(figsize=(8, 5))
 # Plot the standard deviation as a shaded confidence interval
-plt.fill_between(df['num_rings'], mean_angles - std_angles, mean_angles + std_angles, color='teal', alpha=0.15)
+plt.fill_between(rings_int,
+                 df_agg['mean_angle']['mean'] - df_agg['std_angle']['mean'],
+                 df_agg['mean_angle']['mean'] + df_agg['std_angle']['mean'],
+                 color='teal', alpha=0.2)
 # Plot the main average line
-plt.plot(df['num_rings'], mean_angles, marker='o', linestyle='-', color='teal', linewidth=2, label='Mean Edge Angle')
+plt.plot(rings_int, df_agg['mean_angle']['mean'], marker='o', linestyle='-',
+         color='teal', linewidth=2, label='Mean Edge Angle')
 # The mathematical proof of 2D isotropy: exactly 45 degrees
 plt.axhline(45.0, color='black', linestyle='--', alpha=0.7, label='Perfect 2D Isotropy (45°)')
 

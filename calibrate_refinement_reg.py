@@ -1,4 +1,5 @@
 import os
+import random
 import sys
 import time
 
@@ -18,7 +19,7 @@ import triadic_library as triadic
 # This script performs the "Regulatory Refinement Limit" calibration.
 # It reads the structural d0_opt from the previous structural calibration CSV,
 # generates the exact same structural network, and finds the optimal dr.
-# Example command: python calibrate_refinement_reg.py 10000 200.0 0.07 0.2 0.03 0.03 0.2 60 42 True 12
+# Example command: python calibrate_refinement_reg.py 10000 200.0 0.07 0.2 0.03 0.03 0.2 60 num=5 True 12
 
 try:
     N_total = int(sys.argv[1])  # Total budget of nodes
@@ -29,15 +30,23 @@ try:
     cneg = float(sys.argv[6])  # Negative regulation base probability
     dr_base = float(sys.argv[7])  # Target 1D dr (baseline for ring 1)
     max_rings = int(sys.argv[8])  # Maximum resolution
-    seed = int(sys.argv[9])  # Random seed
+
+    # Seed logic (Only used to determine the directory name)
+    seed_arg = sys.argv[9]
+    if seed_arg.startswith('num='):
+        expected_seed_count = int(seed_arg.split('=')[1])
+    elif ',' in seed_arg:
+        expected_seed_count = len(seed_arg.split(','))
+    else:
+        expected_seed_count = 1
 
     # Optional parameters handling
     use_parallel = sys.argv[10].lower() == 'true' if len(sys.argv) > 10 else False
     n_jobs = int(sys.argv[11]) if len(sys.argv) > 11 else 1
 except IndexError:
     print(
-        "Error: Missing arguments. Usage: python calibrate_refinement_reg.py N_total density_1D_base c d0_base cpos "
-        "cneg dr_base max_rings seed [use_parallel] [n_jobs]"
+        "Error: Missing arguments. Usage: python calibrate_refinement_reg.py N_total density c d0 cpos "
+        "cneg dr max_rings [seed|seed1,seed2|num=X] [use_parallel] [n_jobs]"
     )
     sys.exit(1)
 
@@ -56,19 +65,24 @@ Ly_fixed = Lx_fixed
 # SECTION 2: DIRECTORY SETUP & CSV READING
 # =============================================================================
 # 1. Locate the structural data
-struct_dir = f'results/calibrate/ref/Ntot{N_total}_maxR{max_rings}_dens{density_1D_base}_c{c}_seed{seed}/'
-csv_path = os.path.join(struct_dir, "refinement_data.csv")
+struct_dir = (f'results/calibrate/ref/Ntot{N_total}_maxR{max_rings}_dens{density_1D_base}_c{c}'
+              f'_seeds{expected_seed_count}/')
+csv_path = os.path.join(struct_dir, "refinement_raw_data.csv")
 
 if not os.path.exists(csv_path):
-    print(f"CRITICAL ERROR: Structural calibration data not found at {csv_path}")
-    print("Please run calibrate_refinement.py first with the corresponding parameters.")
+    print(f"CRITICAL ERROR: Structural RAW data not found at {csv_path}")
+    print("Please run calibrate_refinement.py first with the SAME ensemble parameters.")
     sys.exit(1)
 
 df_struct = pd.read_csv(csv_path)
 
+# Get the exact list of seeds from the structural dataframe to ensure we only process the seeds that were actually
+# generated in the structural calibration. This is crucial for reproducibility and to avoid any mismatches.
+seeds = df_struct['seed'].unique().tolist()
+
 # 2. Set up the regulatory directory
 dir_name = (f'results/calibrate/ref_reg/Ntot{N_total}_maxR{max_rings}_dens{density_1D_base}'
-            f'_c{c}_cpos{cpos}_cneg{cneg}_seed{seed}/')
+            f'_c{c}_cpos{cpos}_cneg{cneg}_seeds{len(seeds)}/')
 if not os.path.exists(dir_name):
     os.makedirs(dir_name)
 
@@ -99,6 +113,7 @@ print("--- STARTING REGULATORY REFINEMENT CALIBRATION ---")
 print(f"Reading structural data from: {csv_path}")
 print(f"Structural Params: N_total={N_total}, Lx={Lx_fixed:.2f}, Ly={Ly_fixed:.2f}, c={c}, d0_base={d0_base}")
 print(f"Regulatory Params: c+={cpos}, c-={cneg}, target dr_base={dr_base}")
+print(f"Ensemble Size    : {len(seeds)} seeds retrieved from structural CSV")
 print(f"Tolerance        : {tol:.4f}")
 print("=" * 60)
 
@@ -249,7 +264,7 @@ def find_optimal_dr(target_kpos: float, N_total: int, Lx: float, Ly: float, num_
 
 
 def process_reg_step(row: pd.Series, target_kpos: float, N_total: int, Lx: float, Ly: float,
-                     c: float, cpos: float, cneg: float, dr_base: float, seed: int, tol: float) -> dict:
+                     c: float, cpos: float, cneg: float, dr_base: float, tol: float) -> dict:
     """
     Worker for a single resolution step in regulatory calibration.
 
@@ -262,19 +277,19 @@ def process_reg_step(row: pd.Series, target_kpos: float, N_total: int, Lx: float
     :param cpos: float, positive regulation base probability
     :param cneg: float, negative regulation base probability
     :param dr_base: float, initial guess for dr
-    :param seed: int, random seed
     :param tol: float, error tolerance
     :return: dict, results for the current ring resolution
     """
     r = int(row['num_rings'])
+    current_seed = int(row['seed'])
     d0_opt = float(row['d0_opt'])
     delta = float(row['delta'])
 
-    logs = [f"\n--- Resolution R = {r} ---",
+    logs = [f"\n--- Res R = {r} | Seed = {current_seed} ---",
             f"  -> Structural: d0_opt = {d0_opt:.6f}"]
 
     dr_opt, kpos_scaled, kneg_scaled = find_optimal_dr(
-        target_kpos, N_total, Lx, Ly, r, c, cpos, cneg, d0_opt, dr_base, seed, tol
+        target_kpos, N_total, Lx, Ly, r, c, cpos, cneg, d0_opt, dr_base, current_seed, tol
     )
 
     logs.append(f"  -> Found dr: {dr_opt:.6f}")
@@ -282,7 +297,7 @@ def process_reg_step(row: pd.Series, target_kpos: float, N_total: int, Lx: float
     logs.append(f"  -> k_neg   : {kneg_scaled:.4f}")
 
     return {
-        'num_rings': r, 'delta': delta, 'n_total': N_total, 'd0_opt': d0_opt,
+        'num_rings': r, 'seed': current_seed, 'delta': delta, 'n_total': N_total, 'd0_opt': d0_opt,
         'dr_opt': dr_opt, 'kpos_scaled': kpos_scaled, 'kneg_scaled': kneg_scaled,
         'log_messages': "\n".join(logs)
     }
@@ -292,30 +307,45 @@ def process_reg_step(row: pd.Series, target_kpos: float, N_total: int, Lx: float
 # SECTION 4: MAIN CALIBRATION LOOP
 # =============================================================================
 print("\n[Phase 1] Baseline Regulatory Target (R=1)...")
-row_base = df_struct[df_struct['num_rings'] == 1].iloc[0]
-
-# Calculate the exact empirical k_pos and k_neg for the 1D baseline using dr_base
-np.random.seed(seed)
-nodes_1, G_1, _ = triadic.coupled_rings_structural_network_fixed_N(N_total, 1, Lx_fixed, Ly_fixed, c,
-                                                                   row_base['d0_opt'])
-edges_1 = np.array(G_1.edges())
-links_mid_1, _ = triadic.midpoints_rings_PBC(nodes_1, Lx_fixed, Ly_fixed, edges_1[:, 0], edges_1[:, 1])
-
-np.random.seed(seed + 99)
-adjpos_1, adjneg_1 = triadic.coupled_rings_regulatory_network(nodes_1, links_mid_1, Lx_fixed, Ly_fixed, dr_base,
-                                                              cpos, cneg)
-
-target_kpos = adjpos_1.sum() / N_total
-target_kneg = adjneg_1.sum() / N_total
-
-print(f"-> Target <k_pos> established: {target_kpos:.4f}")
-print(f"-> Target <k_neg> established: {target_kneg:.4f}")
-
 results = []
-results.append({
-    'num_rings': 1, 'delta': Ly_fixed, 'n_total': N_total, 'd0_opt': row_base['d0_opt'],
-    'dr_opt': dr_base, 'kpos_scaled': target_kpos, 'kneg_scaled': target_kneg
-})
+target_kpos_dict = {}
+target_kneg_dict = {}
+
+for s in seeds:
+    print(f"\n-> Baseline establishing with seed {s}...")
+    # Get the specific d0_opt for R=1 for THIS seed from the structural dataframe
+    row_base = df_struct[(df_struct['num_rings'] == 1) &
+                         (df_struct['seed'] == s)].iloc[0]
+    d0_opt_base = float(row_base['d0_opt'])
+    print(f"-> Using structural d0_opt: {d0_opt_base:.6f}")
+
+    # Calculate the exact empirical k_pos and k_neg for the 1D baseline using dr_base
+    np.random.seed(s)
+    nodes_1, G_1, _ = triadic.coupled_rings_structural_network_fixed_N(N_total, 1, Lx_fixed, Ly_fixed, c,
+                                                                       d0_opt_base)
+    print(f"-> Nodes generated in structural graph: {G_1.number_of_nodes()} (Target: {N_total})")
+    edges_1 = np.array(G_1.edges())
+    links_mid_1, _ = triadic.midpoints_rings_PBC(nodes_1, Lx_fixed, Ly_fixed, edges_1[:, 0], edges_1[:, 1])
+
+    np.random.seed(s + 99)
+    adjpos_1, adjneg_1 = triadic.coupled_rings_regulatory_network(nodes_1, links_mid_1, Lx_fixed, Ly_fixed, dr_base,
+                                                                  cpos, cneg)
+
+    target_kpos = adjpos_1.sum() / N_total
+    target_kneg = adjneg_1.sum() / N_total
+
+    target_kpos_dict[s] = target_kpos
+    target_kneg_dict[s] = target_kneg
+
+    print(f"-> Target <k_pos> established: {target_kpos:.4f}")
+    print(f"-> Target <k_neg> established: {target_kneg:.4f}")
+
+    results.append({
+        'num_rings': 1, 'seed': s, 'delta': Ly_fixed, 'n_total': N_total, 'd0_opt': d0_opt_base,
+        'dr_opt': dr_base, 'kpos_scaled': target_kpos, 'kneg_scaled': target_kneg
+    })
+
+print(f"-> Baselines established across {len(seeds)} seeds.")
 
 print("\n[Phase 2] Refining Regulatory Mesh...")
 rows_to_process = [row for _, row in df_struct.iterrows() if row['num_rings'] > 1]
@@ -323,20 +353,21 @@ rows_to_process = [row for _, row in df_struct.iterrows() if row['num_rings'] > 
 if use_parallel:
     print(f"-> Dispatching {len(rows_to_process)} tasks to Joblib (n_jobs={n_jobs})...")
     print("   (Logs will appear in real-time as workers finish their rings)\n")
-    with Parallel(n_jobs=n_jobs, return_as="generator") as parallel:
-        gen = parallel(
-            delayed(process_reg_step)(
-                row, target_kpos, N_total, Lx_fixed, Ly_fixed, c, cpos, cneg, dr_base, seed, tol
-            ) for row in rows_to_process
-        )
-        for res in gen:
-            print(res['log_messages'])
-            del res['log_messages']
-            results.append(res)
-    results.sort(key=lambda x: x['num_rings'])
+    executor = Parallel(n_jobs=n_jobs, return_as="generator")
+    gen = executor(
+        delayed(process_reg_step)(
+            row, target_kpos_dict[int(row['seed'])], N_total, Lx_fixed, Ly_fixed, c, cpos, cneg, dr_base, tol
+        ) for row in rows_to_process
+    )
+    for res in gen:
+        print(res['log_messages'])
+        del res['log_messages']
+        results.append(res)
+    results.sort(key=lambda x: (x['num_rings'], x['seed']))
 else:
     for row in rows_to_process:
-        res = process_reg_step(row, target_kpos, N_total, Lx_fixed, Ly_fixed, c, cpos, cneg, dr_base, seed, tol)
+        res = process_reg_step(row, target_kpos_dict[int(row['seed'])], N_total, Lx_fixed, Ly_fixed, c, cpos, cneg,
+                               dr_base, tol)
         print(res['log_messages'])
         del res['log_messages']
         results.append(res)
@@ -348,27 +379,41 @@ print("\n[Phase 3] Generating Regulatory Plots...")
 df = pd.DataFrame(results)
 df.to_csv(os.path.join(dir_name, "refinement_reg_data.csv"), index=False)
 
+# Group by ring resolution to calculate ensemble statistics
+df_agg = df.groupby('num_rings').agg(['mean', 'std']).reset_index()
+df_agg.to_csv(os.path.join(dir_name, "refinement_reg_agg_data.csv"), index=False)
+
 fig_dir = os.path.join(dir_name, "figures")
 os.makedirs(fig_dir, exist_ok=True)
 
-rings_int = np.arange(1, df['num_rings'].max() + 1)
+rings_int = df_agg['num_rings'].values
+
+target_kpos_mean = float(np.mean(list(target_kpos_dict.values())))
+target_kneg_mean = float(np.mean(list(target_kneg_dict.values())))
+
+# To calculate theoretical curves, we use the ensemble mean of d0_opt for each ring
+mean_d0_opts = df_agg['d0_opt']['mean'].values
 
 # 1. Calculate Theoretical dr curve
 # We use the d0_opt from the structural dataframe for each R
-dr_theo_curve = [theoretical_optimal_dr_refined(target_kpos, r, N_total, Lx_fixed, Ly_fixed, c,
-                 df_struct[df_struct['num_rings']==r]['d0_opt'].values[0], cpos) for r in rings_int]
+dr_theo_curve = [theoretical_optimal_dr_refined(target_kpos_mean, r, N_total, Lx_fixed, Ly_fixed, c,
+                 mean_d0_opts[i], cpos) for i, r in enumerate(rings_int)]
 
 # 2. Calculate Unscaled Regulatory Degrees (both pos and neg)
 kpos_unscaled = [theoretical_degree_reg_refined(r, N_total, Lx_fixed, Ly_fixed, c,
-                 df_struct[df_struct['num_rings']==r]['d0_opt'].values[0], cpos, dr_base) for r in rings_int]
+                 mean_d0_opts[i], cpos, dr_base) for i, r in enumerate(rings_int)]
 
 kneg_unscaled = [theoretical_degree_reg_refined(r, N_total, Lx_fixed, Ly_fixed, c,
-                 df_struct[df_struct['num_rings']==r]['d0_opt'].values[0], cneg, dr_base) for r in rings_int]
+                 mean_d0_opts[i], cneg, dr_base) for i, r in enumerate(rings_int)]
 
 # Plot 1: dr Scaling Law
 plt.figure(figsize=(8, 5))
-plt.plot(df['num_rings'], df['dr_opt'], marker='D', linestyle='', color='crimson', label='Exp. Refinement (dr)')
-plt.plot(rings_int, dr_theo_curve, color='orange', linestyle='-', linewidth=2.5, label='Theory (dr Optimal)')
+plt.fill_between(rings_int, df_agg['dr_opt']['mean'] - df_agg['dr_opt']['std'],
+                 df_agg['dr_opt']['mean'] + df_agg['dr_opt']['std'], color='crimson', alpha=0.2)
+plt.plot(rings_int, df_agg['dr_opt']['mean'], marker='D', linestyle='', color='crimson', markersize=5,
+         label='Exp. Refinement (dr)')
+plt.plot(rings_int, dr_theo_curve, color='orange', linestyle='-', linewidth=2.5, zorder=1,
+         label='Theoretical Optimal')
 plt.title("Regulatory Decay Scaling Law: Theory vs Experiment")
 plt.xlabel("Number of Rings (Resolution)")
 plt.ylabel("Optimal Decay Length (dr)")
@@ -387,18 +432,19 @@ plt.plot(rings_int, kpos_unscaled, color='gray', linestyle='--', linewidth=1.5, 
 if cpos != cneg:
     plt.plot(rings_int, kneg_unscaled, color='silver', linestyle='-.', linewidth=1.5,
              label='Unscaled Theory (neg)')
-# Empirical Scaled (Using alpha and lines to show fluctuation gracefully)
-# Positive connections
-plt.plot(df['num_rings'], df['kpos_scaled'], marker='s', linestyle='-', color='royalblue',
-         alpha=0.6, markersize=4, linewidth=1, label='Empirical <k_pos>')
-plt.axhline(target_kpos, color='navy', linestyle=':', alpha=0.8, linewidth=2, label=f'Target <k_pos> '
-                                                                                    f'({target_kpos:.2f})')
 
-# Negative connections
-plt.plot(df['num_rings'], df['kneg_scaled'], marker='o', linestyle='-', color='tomato',
-         alpha=0.6, markersize=4, linewidth=1, label='Empirical <k_neg>')
-plt.axhline(target_kneg, color='darkred', linestyle=':', alpha=0.8, linewidth=2, label=f'Target <k_neg> '
-                                                                                       f'({target_kneg:.2f})')
+# Positive Connections (Empirical Scaled)
+plt.errorbar(rings_int, df_agg['kpos_scaled']['mean'], yerr=df_agg['kpos_scaled']['std'], fmt='s',
+             color='royalblue', ecolor='darkblue', capsize=3, alpha=0.8, label='Empirical <k_pos>')
+plt.axhline(target_kpos_mean, color='navy', linestyle=':', alpha=0.8, linewidth=2,
+            label=f'Target <k_pos> ({target_kpos_mean:.2f})')
+
+# Negative Connections (Empirical Scaled)
+plt.errorbar(rings_int, df_agg['kneg_scaled']['mean'], yerr=df_agg['kneg_scaled']['std'], fmt='o',
+             color='tomato', ecolor='darkred', capsize=3, alpha=0.8, label='Empirical <k_neg>')
+plt.axhline(target_kneg_mean, color='darkred', linestyle=':', alpha=0.8, linewidth=2,
+            label=f'Target <k_neg> ({target_kneg_mean:.2f})')
+
 
 plt.title("Regulatory Degree Conservation: Scaled vs Unscaled")
 plt.xlabel("Number of Rings (Resolution)")
