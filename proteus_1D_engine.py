@@ -203,10 +203,6 @@ for current_seed in seeds:
     path_lengths_t0, avg_distance_t0 = triadic.get_topological_distances(G0, sample_size=2500)
     print(f"-> Structural baseline average distance: {avg_distance_t0:.2f} hops.")
 
-    # Fractal dimension (Hausdorff Mass-Radius scaling)
-    # Let the algorithm find the true diameter (no max_hops limit passed)
-    r_vals, N_r_vals = triadic.get_fractal_mass_radius(G0, max_hops=int(N / 2), sample_size=100)
-
     # Topological vs Geometric Distances (Raw data for local plotting)
     print("-> Calculating Topological vs Geometric distance sample...")
     sample_nodes = list(G0.nodes())
@@ -344,11 +340,9 @@ for current_seed in seeds:
     # Saved to provide the Y-axis (spatial position) for the Spatiotemporal Raster Plot
     np.save(os.path.join(seed_dir, 'nodes_coords.npy'), nodes)
 
-    # We save the fractal distribution and distances arrays compressed to save disk space
+    # We save the distances arrays compressed to save disk space
     np.savez_compressed(
         os.path.join(seed_dir, 'topology_data.npz'),
-        r_vals=r_vals,
-        N_r_vals=N_r_vals,
         path_lengths_t0=path_lengths_t0,
         path_lengths_tfinal=path_lengths_tfinal,
         topo_distances=topo_distances,
@@ -420,7 +414,7 @@ for current_seed in seeds:
     del Gcc, G0, ag
 
     # Delete degrees and distance calculation data
-    del degrees_data, path_lengths_t0, r_vals, N_r_vals
+    del degrees_data, path_lengths_t0,
     del sample_nodes, topo_distances, geom_distances
     del link_lengths, max_link_per_node
 

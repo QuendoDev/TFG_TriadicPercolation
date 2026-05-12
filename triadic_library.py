@@ -2,17 +2,18 @@ import random
 import networkx as nx
 import numpy as np
 
-import scipy.sparse as sp
 from scipy.sparse import csr_matrix
 from scipy.stats import circmean, circstd
+from scipy.special import k1
 
 
 # =============================================================================
-# SECTION 1: GENERAL NETWORK TOPOLOGY & METRICS (1D & 2D COMPATIBLE)
+# SECTION 1: GENERAL NETWORK TOPOLOGY & METRICS (1D, SCALABLE & 2D COMPATIBLE)
 # =============================================================================
 
 def calculate_degrees(G: nx.Graph, adj: np.ndarray, adjpos: np.ndarray, adjneg: np.ndarray,
-                      density: float, d0: float, dr: float, c: float, cpos: float, cneg: float, dim=1) -> dict:
+                      density: float, d0: float, dr: float, c: float, cpos: float, cneg: float,
+                      dim=1, num_rings: int = 1, Lx: float = None, Ly: float = None) -> dict:
     """
     Calculate theoretical and empirical degrees for structural and regulatory networks.
 
@@ -20,16 +21,19 @@ def calculate_degrees(G: nx.Graph, adj: np.ndarray, adjpos: np.ndarray, adjneg: 
     :param adj: numpy array (N, N), structural adjacency matrix (upper triangular)
     :param adjpos: numpy array (N, NL), positive regulatory adjacency matrix
     :param adjneg: numpy array (N, NL), negative regulatory adjacency matrix
-    :param density: float, node density (N / L for 1D, N / L^2 for 2D)
+    :param density: float, node density (N / L for 1D, N / L^2 for 2D, in RINGS it is density_1D_base)
     :param d0: float, decay length for structural connectivity
     :param dr: float, decay length for regulatory connectivity
     :param c: float, connectivity parameter for structural network
     :param cpos: float, connectivity parameter for positive regulation
     :param cneg: float, connectivity parameter for negative regulation
-    :param dim: int, dimensionality of the system (1 or 2)
-
+    :param dim: int or str, dimensionality of the system (1, 2, or 'RINGS')
+    :param num_rings: int, number of rings (only used if dim='RINGS')
+    :param Lx: float, universe width (only used if dim='RINGS')
+    :param Ly: float, universe height (only used if dim='RINGS')
     :return: dict, containing theoretical and empirical arrays and means
     """
+    N = G.number_of_nodes()
     # ==========================================
     # 1. THEORETICAL VALUES (GEOMETRY DEPENDENT)
     # ==========================================
@@ -43,21 +47,70 @@ def calculate_degrees(G: nx.Graph, adj: np.ndarray, adjpos: np.ndarray, adjneg: 
         kappa_in_pos_theo = 2 * density * dr * cpos
         kappa_in_neg_theo = 2 * density * dr * cneg
 
+        # Regulatory OUT-degree <kappa_out>: Average number of links regulated by a SINGLE NODE
         rho_L = density * (k_theo / 2)
         kappa_out_pos_theo = 2 * rho_L * dr * cpos
         kappa_out_neg_theo = 2 * rho_L * dr * cneg
 
     elif dim == 2:
         # 2D polar integral gives 2 * pi * d^2
+        # Structural degree <k>: Average number of physical connections per node
         k_theo = density * 2 * np.pi * (d0 ** 2) * c
+
+        # Regulatory IN-degree <kappa_in>: Average number of nodes regulating a SINGLE LINK
+        # This is the "pressure" exerted on a link
         kappa_in_pos_theo = density * 2 * np.pi * (dr ** 2) * cpos
         kappa_in_neg_theo = density * 2 * np.pi * (dr ** 2) * cneg
 
+        # Regulatory OUT-degree <kappa_out>: Average number of links regulated by a SINGLE NODE
         rho_L = density * (k_theo / 2)
         kappa_out_pos_theo = rho_L * 2 * np.pi * (dr ** 2) * cpos
         kappa_out_neg_theo = rho_L * 2 * np.pi * (dr ** 2) * cneg
+
+    elif dim == 'RINGS':
+        # Structural degree <k>: Average number of physical connections per node
+        k_theo = 0
+
+        # Regulatory IN-degree <kappa_in>: Average number of nodes regulating a SINGLE LINK
+        kappa_in_pos_theo = 0
+        kappa_in_neg_theo = 0
+
+        # Regulatory OUT-degree <kappa_out>: Average number of links regulated by a SINGLE NODE
+        kappa_out_pos_theo = 0
+        kappa_out_neg_theo = 0
+
+        # Scalable Theoretical model (Coupled Rings with Bessel functions)
+        if Lx is None or Ly is None:
+            raise ValueError("Lx and Ly must be provided for dim='RINGS'")
+
+        rho_1D_current = (N / num_rings) / Lx
+        delta = Ly / num_rings
+
+        # k_theo and kappa_in_theo (Integrating over nodes)
+        for n in range(num_rings):
+            dy = min(n, num_rings - n) * delta
+            if dy == 0:
+                k_theo += 2 * c * rho_1D_current * d0
+                kappa_in_pos_theo += 2 * cpos * rho_1D_current * dr
+                kappa_in_neg_theo += 2 * cneg * rho_1D_current * dr
+            else:
+                k_theo += 2 * c * rho_1D_current * dy * k1(dy / d0)
+                kappa_in_pos_theo += 2 * cpos * rho_1D_current * dy * k1(dy / dr)
+                kappa_in_neg_theo += 2 * cneg * rho_1D_current * dy * k1(dy / dr)
+
+        # kappa_out_theo (Integrating over links)
+        rho_L_current = ((N * k_theo) / 2) / num_rings / Lx
+        for n in range(num_rings):
+            dy = min(n, num_rings - n) * delta
+            if dy == 0:
+                kappa_out_pos_theo += 2 * cpos * rho_L_current * dr
+                kappa_out_neg_theo += 2 * cneg * rho_L_current * dr
+            else:
+                kappa_out_pos_theo += 2 * cpos * rho_L_current * dy * k1(dy / dr)
+                kappa_out_neg_theo += 2 * cneg * rho_L_current * dy * k1(dy / dr)
+
     else:
-        raise ValueError("Dimensionality (dim) must be 1 or 2.")
+        raise ValueError("Dimension must be 1, 2, or 'RINGS'")
 
     # ==========================================
     # 2. EMPIRICAL VALUES
@@ -136,38 +189,6 @@ def get_topological_distances(G0: nx.Graph, sample_size: int = 500) -> tuple:
         return path_lengths, 0.0
 
     return path_lengths, float(np.mean(path_lengths))
-
-
-def get_fractal_mass_radius(G0: nx.Graph, max_hops: int = 10, sample_size: int = 100) -> tuple:
-    """
-    Compute the average mass N(r) for different topological radii r. It uses the giant component G0 to avoid infinite
-    distances. It only cares about the first few hops to see the growth trend.
-
-    :param G0: networkx graph (Giant Component)
-    :param max_hops: maximum number of hops to consider
-    :param sample_size: number of nodes to sample for calculation
-
-    :return: (r_values, N_r_values)
-    """
-    # Average over a sample of nodes to get smooth data
-    nodes_to_sample = min(sample_size, len(G0.nodes()))
-    sampled_nodes = random.sample(list(G0.nodes()), nodes_to_sample)
-
-    # Dictionary to store the average mass N(r) for each radius r
-    mass_vs_radius = {r: [] for r in range(1, max_hops + 1)}
-    for source in sampled_nodes:
-        # Get distances from source to all other nodes in G0
-        lengths = nx.single_source_shortest_path_length(G0, source)
-
-        # For each radius r, count how many nodes are at distance <= r
-        for r in range(1, max_hops + 1):
-            mass = sum(1 for node, dist in lengths.items() if 0 < dist <= r)
-            mass_vs_radius[r].append(mass)
-
-    # Calculate the average mass for each radius across all sampled nodes
-    r_vals = np.array(list(mass_vs_radius.keys()))
-    N_r_vals = np.array([np.mean(mass_vs_radius[r]) for r in r_vals])
-    return r_vals, N_r_vals
 
 
 # =============================================================================
@@ -906,64 +927,61 @@ def coupled_rings_regulatory_network(nodes: np.ndarray, links: np.ndarray, Lx: f
     return adjpos, adjneg
 
 
-def itera_rings(Lx: float, statenode1: np.ndarray, nodes: np.ndarray, links: np.ndarray,
-                I: np.ndarray, J: np.ndarray, adjpos: np.ndarray, adjneg: np.ndarray, p: float) -> tuple:
+def itera_rings(statenode1: np.ndarray, I: np.ndarray, J: np.ndarray, adjpos: np.ndarray, adjneg: np.ndarray,
+                p: float) -> tuple:
     """
-    Perform one iteration of the triadic dynamics for coupled rings, tracking spatial metrics along the X-axis.
+    Perform one iteration of the triadic dynamics for the scalable model (Coupled Rings).
+    Angular/spatial metrics are omitted to match the 2D logic.
 
-    :param Lx: float, length of the rings (X-axis)
     :param statenode1: numpy array (N,), active state of nodes at t-1
-    :param nodes: numpy array (N, 2), coordinates of nodes
-    :param links: numpy array (NL, 2), coordinates of links
     :param I: numpy array (NL,), indices of first node of each link
     :param J: numpy array (NL,), indices of second node of each link
     :param adjpos: numpy array (N, NL), positive regulatory matrix
     :param adjneg: numpy array (N, NL), negative regulatory matrix
     :param p: float, probability of a link not breaking randomly
 
-    :return: tuple, (RT, agn, spatial_metrics) containing fractions, giant component indices, and circular stats
+    :return: tuple (RT, agn), where RT contains cluster fractions and agn is the giant component indices
     """
-    N, NL = nodes.shape[0], links.shape[0]
+    N = statenode1.shape[0]
+    NL = I.shape[0]
 
-    # 1) Probability of surviving
+    # Obtain the new state of the links
+    # 1) It does not break randomly (with probability p): p is the probability of surviving
     f1 = p > np.random.rand(NL)
-    # 2) Positive regulation
-    f2 = np.matmul(adjpos.transpose(), statenode1) > 0
-    # 3) No negative regulation
-    f3 = np.logical_not(np.matmul(adjneg.transpose(), statenode1))
+    # 2) It has at least one active node exerting positive regulation
+    f2 = adjpos.transpose().dot(statenode1) > 0
+    # 3) It has no active node exerting negative regulation
+    f3 = np.logical_not(adjneg.transpose().dot(statenode1))
 
+    # State of the links in this iteration (active / inactive)
     statelink = f1 * f2 * f3
+
+    # Indexes of active links. It will be used to create the new giant component
     linkid = np.where(statelink)[0]
 
+    # Defining the new adjacency matrix (sparse matrix)
     nadj = csr_matrix((np.ones(linkid.shape[0]), (I[linkid], J[linkid])), shape=(N, N))
+
+    # Compute the giant component in this iteration
     Gn = nx.from_scipy_sparse_array(nadj)
     del nadj
     Gccn = sorted(nx.connected_components(Gn), key=len, reverse=True)
 
-    mean1, std1, mean2, std2, mean3, std3 = np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-
-    # Track phase exclusively along the continuous X-axis
-    theta = nodes[:, 0] * (2. * np.pi / Lx)
-
     if len(Gccn) > 0:
-        agn = list(Gccn[0])
-        mean1, std1 = circmean(theta[agn], high=2 * np.pi, low=0), circstd(theta[agn], high=2 * np.pi, low=0)
         ngn = len(Gccn[0])
+        agn = list(Gccn[0])
     else:
-        agn, ngn = [], 0
+        ngn = 0
+        agn = []
 
-    ag2_len, ag3_len = 0, 0
-    if len(Gccn) > 1:
-        ag2 = list(Gccn[1])
-        mean2, std2 = circmean(theta[ag2], high=2 * np.pi, low=0), circstd(theta[ag2], high=2 * np.pi, low=0)
-        ag2_len = len(Gccn[1])
-        if len(Gccn) > 2:
-            ag3 = list(Gccn[2])
-            mean3, std3 = circmean(theta[ag3], high=2 * np.pi, low=0), circstd(theta[ag3], high=2 * np.pi, low=0)
-            ag3_len = len(Gccn[2])
+    # Calculate fractions for the first three clusters
+    ag2_len = len(Gccn[1]) if len(Gccn) > 1 else 0
+    ag3_len = len(Gccn[2]) if len(Gccn) > 2 else 0
 
+    # Output: new set of active nodes in the first three clusters for the next step
     RT = np.asarray([ngn, ag2_len, ag3_len]) * 1. / N
-    return RT, agn, [mean1, std1, mean2, std2, mean3, std3]
+
+    return RT, agn
 
 
 # =============================================================================

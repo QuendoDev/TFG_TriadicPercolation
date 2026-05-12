@@ -214,12 +214,8 @@ for current_seed in seeds:
     print("=" * 60 + "\n")
 
     # Shortest paths (Topological distances at t=0)
-    path_lengths_t0, avg_distance_t0 = triadic.get_topological_distances(G0, sample_size=500)
+    path_lengths_t0, avg_distance_t0 = triadic.get_topological_distances(G0, sample_size=2500)
     print(f"-> Structural baseline average distance: {avg_distance_t0:.2f} hops.")
-
-    # Fractal dimension (Hausdorff Mass-Radius scaling)
-    # Let the algorithm find the true diameter (no max_hops limit passed)
-    r_vals, N_r_vals = triadic.get_fractal_mass_radius(G0, max_hops=int(N / 2), sample_size=100)
 
     # Topological vs Geometric Distances (Raw data for local plotting)
     print("-> Calculating Topological vs Geometric distance sample...")
@@ -315,7 +311,7 @@ for current_seed in seeds:
     if len(G_active.nodes()) > 0:
         largest_cc_nodes = max(nx.connected_components(G_active), key=len)
         G0_active = G_active.subgraph(largest_cc_nodes)
-        path_lengths_tfinal, avg_distance_tfinal = triadic.get_topological_distances(G0_active, sample_size=500)
+        path_lengths_tfinal, avg_distance_tfinal = triadic.get_topological_distances(G0_active, sample_size=2500)
     else:
         path_lengths_tfinal = []
         avg_distance_tfinal = 0.0
@@ -341,11 +337,9 @@ for current_seed in seeds:
     # Saved to provide the Y-axis (spatial position) for the Spatiotemporal Raster Plot
     np.save(os.path.join(seed_dir, 'nodes_coords.npy'), nodes)
 
-    # We save the fractal distribution and distances arrays compressed to save disk space
+    # We save the distances arrays compressed to save disk space
     np.savez_compressed(
         os.path.join(seed_dir, 'topology_data.npz'),
-        r_vals=r_vals,
-        N_r_vals=N_r_vals,
         path_lengths_t0=path_lengths_t0,
         path_lengths_tfinal=path_lengths_tfinal,
         topo_distances=topo_distances,
@@ -418,7 +412,7 @@ for current_seed in seeds:
     del Gcc, G0, ag
 
     # Delete degrees and distance calculation data
-    del degrees_data, path_lengths_t0, r_vals, N_r_vals
+    del degrees_data, path_lengths_t0
     del sample_nodes, topo_distances, geom_distances
     del DX, DY, link_lengths, max_link_per_node
 

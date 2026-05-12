@@ -53,7 +53,7 @@ def compute_experimental_k(idx: int, d0_test: float, N_per_ring: int, num_rings:
     k_emp = np.mean([d for n, d in G.degree()])
     return idx, d0_test, k_emp
 
-
+# TODO: check if this is ok or if I have to change it
 # =============================================================================
 # SECTION 2: GLOBAL INPUTS (ALL AT THE BEGINNING)
 # =============================================================================

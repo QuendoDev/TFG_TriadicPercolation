@@ -383,6 +383,26 @@ df.to_csv(os.path.join(dir_name, "refinement_reg_data.csv"), index=False)
 df_agg = df.groupby('num_rings').agg(['mean', 'std']).reset_index()
 df_agg.to_csv(os.path.join(dir_name, "refinement_reg_agg_data.csv"), index=False)
 
+# Save a clean file with the exact mean d0 and dr for each number of rings
+optimal_params_df = pd.DataFrame({
+    'num_rings': df_agg['num_rings'].values.flatten(),
+    'd0_opt': df_agg['d0_opt']['mean'].values,
+    'dr_opt': df_agg['dr_opt']['mean'].values
+})
+optimal_params_df.to_csv(os.path.join(dir_name, "optimal_d0_dr_parameters.csv"), index=False, float_format='%.15f')
+
+# Save as a friendly text file with copy-pasteable strings for the .sh bash scripts
+with open(os.path.join(dir_name, "optimal_parameters.txt"), 'w') as f:
+    f.write("--- EXACT OPTIMAL PARAMETERS FOR SCALABLE PROTEUS ENGINE ---\n\n")
+    for _, row in optimal_params_df.iterrows():
+        nr = int(row['num_rings'])
+        d0_val = row['d0_opt']
+        dr_val = row['dr_opt']
+        f.write(f"Nr = {nr}:\n")
+        f.write(f"d0_opt = {d0_val:.15f}\n")
+        f.write(f"dr_opt = {dr_val:.15f}\n")
+        f.write("-" * 40 + "\n")
+
 fig_dir = os.path.join(dir_name, "figures")
 os.makedirs(fig_dir, exist_ok=True)
 

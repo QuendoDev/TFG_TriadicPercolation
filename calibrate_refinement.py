@@ -335,6 +335,23 @@ df.to_csv(os.path.join(dir_name, "refinement_raw_data.csv"), index=False)
 df_agg = df.groupby('num_rings').agg(['mean', 'std'])
 rings_int = df_agg.index.values
 
+# Save a clean file with the exact mean d0 for each number of rings (Max precision)
+optimal_d0_df = pd.DataFrame({
+    'num_rings': rings_int,
+    'd0_opt_mean': df_agg['d0_opt']['mean'].values
+})
+optimal_d0_df.to_csv(os.path.join(dir_name, "optimal_d0_parameters.csv"), index=False, float_format='%.15f')
+
+# Save as a friendly text file with copy-pasteable strings
+with open(os.path.join(dir_name, "optimal_parameters.txt"), 'w') as f:
+    f.write("--- EXACT OPTIMAL d0 PARAMETERS FOR PROTEUS ENGINE ---\n\n")
+    for _, row in optimal_d0_df.iterrows():
+        nr = int(row['num_rings'])
+        d0_val = row['d0_opt_mean']
+        f.write(f"Nr = {nr}:\n")
+        f.write(f"d0 = {d0_val:.15f}\n")
+        f.write("-" * 40 + "\n")
+
 fig_dir = os.path.join(dir_name, "figures")
 os.makedirs(fig_dir, exist_ok=True)
 

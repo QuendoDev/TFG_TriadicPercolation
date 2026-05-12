@@ -129,7 +129,15 @@ cpos, cneg, seed = prm["cpos"], prm["cneg"], prm["seed"]
 Tmax_actual = prm["Tmax"]
 
 # --- DIMENSION DETECTION ---
-if "geometry" in prm:
+if "num_rings" in prm:
+    dim = "RINGS"
+    geometry = "RINGS"
+    num_rings = prm["num_rings"]
+    RC_factor = 1.0
+    Lx, Ly = prm["Lx"], prm["Ly"]
+    L = np.asarray([Lx, Ly])
+    fig_width, fig_height = 8.0, 8.0
+elif "geometry" in prm:
     dim = 2
     geometry = prm["geometry"]
     RC_factor = prm["RC_factor"]
@@ -170,7 +178,7 @@ print(f"\n-> Perfectly understood! Selected {len(frames_to_plot)} frames to rend
 print("-" * 45)
 
 # Calculate recommended marker size based on geometry and visual style
-if dim == 2:
+if dim == 2 or dim == "RINGS":
     rec_solid = 4.0 # Solid continuous color blobs
     rec_spaced = 1.5    # Individual points (good for drawing background links)
     hint = f"{rec_solid} for solid pattern, {rec_spaced} to see links"
@@ -236,6 +244,21 @@ elif dim == 2:
     adjpos, adjneg = triadic.regulatory_network_square(nodes, links, L, dr, cpos, cneg)
 
     # Format for LineCollection in 2D (Direct X, Y coordinates)
+    start_points = nodes[I]
+    end_points = nodes[J]
+    segments = np.stack((start_points, end_points), axis=1)
+
+elif dim == "RINGS":
+    # Rebuild scalable structural network
+    nodes, G, adj = triadic.coupled_rings_structural_network_fixed_N(N, num_rings, Lx, Ly, c, d0)
+    lij = np.array(G.edges())
+    I, J = lij[:, 0], lij[:, 1]
+
+    # Rebuild scalable regulatory network
+    links, NL = triadic.midpoints_rings_PBC(nodes, Lx, Ly, I, J)
+    adjpos, adjneg = triadic.coupled_rings_regulatory_network(nodes, links, Lx, Ly, dr, cpos, cneg)
+
+    # Format for LineCollection (Direct X, Y coordinates)
     start_points = nodes[I]
     end_points = nodes[J]
     segments = np.stack((start_points, end_points), axis=1)
@@ -323,11 +346,12 @@ for it in frames_to_plot:
         if len(clusters) > 2: ag3 = list(clusters[2])
 
         # Multiply the network matrix by the CURRENTLY active nodes
+        # Use .dot() instead of np.matmul to safely handle both dense (1D/2D) and sparse (RINGS) matrices
         # True if the link receives at least 1 positive signal from an active node
-        current_pos_signal = np.matmul(adjpos.transpose(), active_mask) > 0
+        current_pos_signal = adjpos.transpose().dot(active_mask) > 0
 
         # True if the link receives at least 1 negative signal from an active node
-        current_neg_signal = np.matmul(adjneg.transpose(), active_mask) > 0
+        current_neg_signal = adjneg.transpose().dot(active_mask) > 0
 
         # Dynamics logic: Inhibition overrides excitation.
         # A link is inhibited if it receives ANY negative signal.
@@ -373,7 +397,7 @@ for it in frames_to_plot:
                                          markersize=ms * 1.1)
                 ax.set_ylim(-0.1, 0.1)
 
-        elif dim == 2:
+        elif dim == 2 or dim == "RINGS":
             # Plot all nodes as inactive first (Cyan)
             ax.plot(nodes[:, 0], nodes[:, 1], "o", color='cyan', markersize=ms, alpha=0.3, markeredgewidth=0)
 
@@ -402,16 +426,26 @@ for it in frames_to_plot:
                 Line2D([0], [0], color='black', lw=2, alpha=0.3, label='Structural Links')
             )
 
+        # Base elements that always appear
         legend_elements_struct.extend([
             Line2D([0], [0], marker='o', color='w', markerfacecolor='cyan', markersize=8,
                    label='Inactive Nodes'),
             Line2D([0], [0], marker='o', color='w', markerfacecolor='magenta', markersize=8,
-                   label='Cluster 1 (Giant)'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8,
-                   label='Cluster 2'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=8,
-                   label='Cluster 3')
+                   label='Cluster 1 (Giant)')
         ])
+
+        # Conditional elements: Only add them to the legend if they actually exist in this frame
+        if len(ag2) > 0:
+            legend_elements_struct.append(
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='lime', markersize=8,
+                       label='Cluster 2')
+            )
+        if len(ag3) > 0:
+            legend_elements_struct.append(
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', markersize=8,
+                       label='Cluster 3')
+            )
+
         leg = ax.legend(handles=legend_elements_struct, loc='center left', bbox_to_anchor=(1.05, 0.5),
                         title="Structural State", frameon=True, edgecolor='lightgray', facecolor='white',
                         framealpha=0.9, borderaxespad=0.)
@@ -454,7 +488,7 @@ for it in frames_to_plot:
                                                  color='black', markersize=ms * 1.1)
                 ax.set_ylim(-0.1, 0.1)
 
-        elif dim == 2:
+        elif dim == 2 or dim == "RINGS":
             ax.plot(links[:, 0], links[:, 1], "o", color='cyan', markersize=ms * 1.0, alpha=1.0,
                     markeredgewidth=0)
             if np.any(dyn_excited): ax.plot(links[dyn_excited, 0], links[dyn_excited, 1], "o", color='magenta',

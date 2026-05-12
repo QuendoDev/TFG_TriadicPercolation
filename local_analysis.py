@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
+from matplotlib.ticker import MaxNLocator
 
 # =============================================================================
 # TRIADIC PERCOLATION: LOCAL ANALYSIS SUITE
@@ -21,11 +22,11 @@ from matplotlib.lines import Line2D
 # 2 clusters on those plots.
 
 # The selected parameters by the user will be referenced as the targeted set of parameters. It includes: N, Tmax, c,
-# cpos, cneg, d0, dr, RC_factor. # TODO: add rings model here when finished. add it on global and add its section
+# cpos, cneg, d0, dr, num_rings, and RC_factor.
 
 # --- PLOTTING CATEGORIES & EXPECTED OUTPUTS ---
 
-# - GLOBAL (APPLIES TO 1D AND 2D):
+# - GLOBAL (APPLIES TO 1D, 2D, AND SCALABLE):
 #     - Average Shortest Path (Hops) vs Control Parameter (p): the 'y' value is calculated getting a sample of nodes
 #       and measure the shortest path of each node in that sample with ALL the other nodes in the sample. This is made
 #       for each seed in a simulation with the targeted set of parameters, computing the mean of all those values. If
@@ -49,7 +50,6 @@ from matplotlib.lines import Line2D
 #       the targeted set of parameters, and for each p it takes all the R values across seeds and time steps (after
 #       the transient time TT) and plots a violin plot of those R values vs p. So if there are 10 values of p, there
 #       will be 10 violins in the graph, each with its own color.
-#     - # TODO: fractal (when all finished, try to implement it, now it's bugged and I don't want to waste time on it)
 
 # - 1D (RING GEOMETRY) - LOCAL SIMULATION PLOTS:
 #     - Fraction of Active Nodes (R) vs Time (iterations): it averages R across seeds at each time step (after the
@@ -92,98 +92,65 @@ from matplotlib.lines import Line2D
 #     - Phase Space: Size vs Angular Position: this graph shows 3 variables: the fraction of active nodes (R) on the
 #       'y' axis, the average angular position of the cluster within the ring (rad) on the 'x' axis, and the time as
 #       a color gradient. The average angular position is calculated as the circular mean of the positions of the
-#       active nodes in the ring, weighted by their degree (it could be just a simple mean if it is better to keep it
-#       simple). This graph can reveal interesting dynamical trajectories in the phase space, such as whether the
-#       system tends to stabilize around certain angular positions or if it exhibits oscillatory behavior around the
-#       ring. There will be a version of this graph with the 3 bigger clusters in the same graph, each with its own
-#       color, and another version with 3 different graphs, each one with the data of one cluster, to better visualize
-#       the trajectories of each cluster separately. This is made for each seed because the phase space trajectory
-#       can be very different across seeds, so if there are 5 seeds, there will be 20 different graphs, each with the
-#       data of one cluster of one seed (5 seeds x 4 clusters (3 bigger + all together) = 20 graphs).
+#       active nodes in the ring, weighted by their degree. This graph can reveal interesting dynamical trajectories.
 #     - Spatial Position over Time: graph displaying the average angular position of the cluster (rad) on the 'y'
-#       axis and the time (iterations) on the 'x' axis. There will be a version of this graph with the 3 bigger
-#       clusters in the same graph, each with its own color, and another version with 3 different graphs, each one
-#       with the data of one cluster, to better visualize the trajectories of each cluster separately.This is made for
-#       each seed because the trajectories can be very different across seeds, so if there are 5 seeds, there will be
-#       20 different graphs, each with the data of one cluster of one seed (5 seeds x 4 clusters (3 bigger + all
-#       together) = 20 graphs).
+#       axis and the time (iterations) on the 'x' axis.
 #     - Spatio-temporal Evolution: raster plot displaying the spatial position of the active nodes over time. The 'y'
 #       axis represents the position of the nodes in the ring represented as a single line with height y=L and PBC,
-#       while the 'x' axis represents time (iterations). Each point in the plot indicates when a node is active at a
-#       given time step. This visualization can reveal patterns such as traveling waves, localized clusters, or
-#       oscillatory behavior around the ring. This is made for each seed because the spatio-temporal patterns can be
-#       very different across seeds, so if there are 5 seeds, there will be 5 different raster plots, each with the
-#       data of one seed.
+#       while the 'x' axis represents time (iterations). Each point in the plot indicates when a node is active.
 #     - Topological vs Geometric Distance: graph displaying the topological distance (number of hops) on the 'y' axis
-#       and the geometric distance (physical space) on the 'x' axis. The topological distance is the minimum number of
-#       links needed to travel between two nodes, while the geometric distance is their actual physical separation.
-#       The scatter plot represents thousands of node pairs as individual points, capturing the high variance of path
-#       efficiencies (the Small-World effect allows physically distant nodes to connect in very few hops). A moving
-#       average line is plotted over the scatter cloud, calculated by dividing the x-axis into bins and averaging the
-#       y-values within each bin, revealing the underlying macroscopic scaling law. This is a global plot made using
-#       the pooled data from all seeds to ensure a massive, statistically robust sample size, so for each simulation
-#       there will be one single scatter plot with the data of all those 5 seeds together, and the moving average line
-#       overlaid.
+#       and the geometric distance (physical space) on the 'x' axis. The scatter plot represents thousands of node pairs
+#       as individual points, capturing the high variance of path efficiencies (the Small-World effect).
 #     - Spatial Width over Time: graph displaying the spatial spread or angular standard deviation of the cluster
-#       (rad) on the 'y' axis and the time (iterations) on the 'x' axis. There will be a version of this graph with
-#       the 3 bigger clusters in the same graph, each with its own color, and another version with 3 different graphs,
-#       each one with the data of one cluster, to better visualize the structural dispersion of each cluster
-#       separately. This is made for each seed because the structural rupture and spreading dynamics can vary
-#       significantly in timing and magnitude across seeds, so if there are 5 seeds, there will be 20 different
-#       graphs, each with the data of one cluster of one seed (5 seeds x 4 layouts (3 individual + all together) = 20
-#       graphs).
-#     - # TODO: fractal (when all finished, try to implement it, now it's bugged and I don't want to waste time on it)
-#
+#       (rad) on the 'y' axis and the time (iterations) on the 'x' axis.
+
 # - 2D (TOROIDAL GEOMETRY) - LOCAL SIMULATION PLOTS:
-#     - Fraction of Active Nodes (R) vs Time (iterations): it averages R across seeds at each time step (after the
-#       transient time TT) and plots it vs time. It can generate a global graph with the 3 bigger clusters or 3 graphs,
-#       one per cluster, each with its own color and shaded error bars (std across seeds).
+#     - Fraction of Active Nodes (R) vs Time (iterations): Same as 1D.
 #     - Physical Link Length Distribution: histogram with the link lengths, with the theoretical geometric-exponential
 #       decay curve overlaid for comparison. Unlike the pure exponential in 1D, the 2D theoretical curve follows
 #       P(d) ~ d * exp(-d/d0). This asymmetric, mountain-like shape occurs because the available space (the perimeter
-#       of a search circle) grows linearly with distance, combating the exponential connectivity penalty until the
-#       distance becomes too large and the exponential decay dominates. This is made using the pooled data from all
-#       seeds to ensure a smooth statistical distribution.
-#     - Regulatory In-Degree Distribution (kappa_in): histogram displaying the number of regulatory nodes that exert
-#       influence over each structural link, separated by positive and negative regulations. Physically, since the
-#       "targets" being searched in the space are nodes, this distribution is governed purely by the spatial density
-#       of nodes and the regulatory connectivity kernel. This is made using the data from all seeds aggregated together.
-#     - Regulatory Out-Degree Distribution (kappa_out): histogram displaying the number of structural links regulated
-#       by each individual node, separated by positive and negative regulations. Physically, since the "targets" being
-#       searched in the space are the structural links (their midpoints), this distribution is strongly governed by
-#       the underlying topology's link density and the regulatory connectivity kernel. This is made using the data
-#       from all seeds aggregated together.
-#     - Structural Degree Distribution (k): histogram displaying the total number of physical connections (edges) each
-#       node has within the structural network. Despite the non-Gaussian link length distribution, the Central Limit
-#       Theorem dictates that this macroscopic sum of independent distance-weighted Bernoulli trials across the 2D space
-#       will naturally form a symmetric Gaussian (Normal) bell curve. This is made using the data from all seeds
-#       aggregated together, with the theoretical mean marked as a vertical line.
-#     - Topological Distance Shift (Hops): histograms comparing the shortest path lengths at t=0 (intact structural
-#       network) and t=Tmax (surviving active component). The distribution at t=0 reflects the underlying structural
-#       topology, while the distribution at t=Tmax reveals how the dynamics have pruned the network and altered its
-#       effective topology. This is made using the data from all seeds, generating three histograms (t=0, t=Tmax,
-#       and combined).
+#       of a search circle) grows linearly with distance.
+#     - Regulatory In-Degree Distribution (kappa_in): Same underlying physical principles as 1D, mapped to 2D.
+#     - Regulatory Out-Degree Distribution (kappa_out): Same underlying physical principles as 1D, mapped to 2D.
+#     - Structural Degree Distribution (k): Symmetric Gaussian bell curve.
+#     - Topological Distance Shift (Hops): Same as 1D.
 #     - 2D Spatial Activity Heatmap: scatter plot representing the physical embedding of the network in the 2D toroidal
 #       space (X and Y coordinates). The color of each node (using a thermal gradient) represents its overall activation
 #       frequency across the entire simulation time (Tmax). This visualization reveals spatial patterns, such as whether
 #       activity is globally homogenous or localized into specific persistent pockets/clusters. This is made for a
-#       single representative seed, because averaging the spatial coordinates of different random universes would
-#       destroy their unique emergent geometric patterns.
-#     - Topological vs Geometric Distance: graph displaying the topological distance (number of hops) on the 'y' axis
-#       and the geometric 2D distance (physical space) on the 'x' axis. The scatter plot represents thousands of node
-#       pairs as individual points, capturing the high variance of path efficiencies. A moving average line is plotted
-#       over the scatter cloud, calculated by dividing the x-axis into bins and averaging the y-values within each bin,
-#       revealing the underlying macroscopic scaling law. This is a global plot made using the pooled data from all
-#       seeds.
-#     - # TODO: fractal (when all finished, try to implement it, now it's bugged and I don't want to waste time on it)
-#
-#
-# - SCALABLE (COUPLED RINGS) - LOCAL SIMULATION PLOTS: # TODO: rings
-#
+#       single representative seed.
+#     - Topological vs Geometric Distance: Same as 1D, but using 2D Euclidean distances with PBC.
+
+# - SCALABLE (COUPLED RINGS) - LOCAL SIMULATION PLOTS:
+#     - Fraction of Active Nodes (R) vs Time (iterations): Same as 1D and 2D.
+#     - Physical Link Length Distribution: histogram with the link lengths, with the theoretical 2D
+#       geometric-exponential decay curve overlaid. The empirical distribution captures the hybrid nature of the
+#       geometry (continuous in X, discrete in Y), converging toward the continuous 2D theory as the number of rings
+#       (Nr) increases.
+#     - Regulatory In-Degree & Out-Degree Distributions: Same physical principles, calculated over the coupled rings
+#       topology using the independently calibrated regulatory decay lengths (dr) for each specific resolution (Nr).
+#     - Structural Degree Distribution (k): Symmetric Gaussian bell curve. The theoretical mean is derived from the
+#       Bessel-function based integration specific to the refinement model geometry.
+#     - Topological Distance Shift (Hops): Same as 1D and 2D.
+#     - 2D Spatial Activity Heatmap: scatter plot representing the physical embedding of the network in the universe
+#       (X as continuous horizontal position, Y as discrete vertical rings). The color of each node represents its
+#       overall activation frequency across Tmax. This visualization reveals spatial clustering and transversal
+#       connections.
+#     - Topological vs Geometric Distance: scatter plot displaying the topological distance against the 2D physical
+#       distance (Pythagorean distance with double PBC). Captures the Small-World effect across the coupled rings.
+
+# - CROSS-DIMENSIONAL (MASTER PLOTS) - PERCOLATION & TRANSITION:
+#     - Dimensional Shift of the Triadic Percolation Transition (R vs p): Master graph displaying the fraction of
+#       active nodes (R) against the control parameter (p). It overlaps the 1D limit, 2D limit, and the intermediate
+#       coupled rings resolutions (Nr) to visually demonstrate how the transition point shifts as dimensions increase.
+#     - Thermodynamic Susceptibility (\chi) vs Control Parameter (p): Graph displaying the susceptibility
+#       (calculated as N * \sigma_R^2) against p. It reveals the exact critical point (p_c) of the phase transition
+#       through a divergence peak, demonstrating the explosive nature of triadic percolation.
+#     - Critical Parameter (p_c) vs Dimensionality (Nr): Graph tracking the exact location of the susceptibility peak
+#       (p_c) as a function of the system's resolution (Number of Rings). It features the 1D and 2D limits as infinite
+#       horizontal asymptotes, visually proving the continuous dimensional crossover of the network's robustness.
 #
 # =============================================================================
-
-# TODO: añadir los colores bien hechos al grafico R vs p (maybe change the ' each with its own color' above)
 
 # =============================================================================
 # GLOBAL ANALYSIS SETUP
@@ -221,9 +188,6 @@ try:
     t_cneg_1d = float(input("Target cneg [0.03]: ") or 0.03)
     t_d0_1d   = float(input("Target d0 [0.2]: ") or 0.2)
     t_dr_1d   = float(input("Target dr [0.2]: ") or 0.2)
-    # TODO: fractal
-    # t_pfss_str_1d = input("Target 'p' for Fractal FSS plot 5 (or press Enter to skip): ")
-    # t_pfss_1d = float(t_pfss_str_1d) if t_pfss_str_1d.strip() else None
 
     print("\n" + "-" * 45)
     print(" 2D SIMULATION TARGETS")
@@ -236,25 +200,26 @@ try:
     t_d0_2d   = float(input("Target d0 [0.25]: ") or 0.25)
     t_dr_2d   = float(input("Target dr [0.25]: ") or 0.25)
     t_RC_2d = float(input("Target RC factor (Lx/Ly) [1.0]: ") or 1.0)
-    # TODO: fractal
-    # t_pfss_str_2d = input("Target 'p' for Fractal FSS plot 5 (or press Enter to skip): ")
-    # t_pfss_2d = float(t_pfss_str_2d) if t_pfss_str_2d.strip() else None
 
     print("\n" + "-" * 45)
     print(" RINGS SIMULATION TARGETS")
     print("-" * 45)
-    t_Tmax_rings = int(input("Target Tmax [1000]: ") or 1000)
+    t_Tmax_rings = int(input("Target Tmax [500]: ") or 500)
     t_N_rings = int(input("Target N for plots 1, 2, 3 and 4 [10000]: ") or 10000)
-    t_c_rings = float(input("Target c [0.4]: ") or 0.4)
-    t_cpos_rings = float(input("Target cpos [0.2]: ") or 0.2)
-    t_cneg_rings = float(input("Target cneg [0.2]: ") or 0.2)
-    t_d0_rings = float(input("Target d0 [0.25]: ") or 0.25)
-    t_dr_rings = float(input("Target dr [0.25]: ") or 0.25)
-    t_num_rings = int(input("Target num_rings [2]: ") or 2)
-    t_dfact_rings = float(input("Target delta_factor [0.1]: ") or 0.1)
-    # TODO: fractal
-    # t_pfss_str_rings = input("Target 'p' for Fractal FSS plot 5 (or press Enter to skip): ")
-    # t_pfss_rings = float(t_pfss_str_rings) if t_pfss_str_rings.strip() else None
+    t_c_rings = float(input("Target c [0.07]: ") or 0.07)
+    t_cpos_rings = float(input("Target cpos [0.03]: ") or 0.03)
+    t_cneg_rings = float(input("Target cneg [0.03]: ") or 0.03)
+
+    # Allow multiple target rings for local plotting (comma separated)
+    rings_input = input("Target num_rings (for local plots, comma separated) [1, 2, 5, 15, 35, 60]: ")
+    if rings_input.strip():
+        t_num_rings = [int(x.strip()) for x in rings_input.split(',')]
+    else:
+        t_num_rings = [1, 2, 5, 15, 35, 60]
+
+    print("\n  -> Master Plot Asymptotic Limits:")
+    t_limit_d0_1d = float(input("     Target 1D d0/dr limit [0.2]: ") or 0.2)
+    t_limit_d0_2d = float(input("     Target 2D d0/dr limit [1.787]: ") or 1.787)
 
 except ValueError:
     print("Invalid input! Exiting setup. Please use numeric values.")
@@ -269,19 +234,11 @@ global_R_time_series_1D = []
 all_R_fluctuations_1D = []
 steady_state_distances_1D = []
 
-# TODO: fractal
-# # List for the all-N 1D fractal graph
-# global_fractal_data_1D = []
-
 # Lists for the 2D global plots
 global_R_vs_p_2D = []
 global_R_time_series_2D = []
 all_R_fluctuations_2D = []
 steady_state_distances_2D = []
-
-# TODO: fractal
-# # List for the all-N 2D fractal graph
-# global_fractal_data_2D = []
 
 # Lists for the RINGS global plots
 global_R_vs_p_RINGS = []
@@ -289,9 +246,9 @@ global_R_time_series_RINGS = []
 all_R_fluctuations_RINGS = []
 steady_state_distances_RINGS = []
 
-# TODO: fractal
-# # List for the all-N RINGS fractal graph
-# global_fractal_data_RINGS = []
+# Independent lists strictly for the Master Plots Asymptotic limits
+master_limit_1D = []
+master_limit_2D = []
 
 # Define the new base directories
 base_dirs = {
@@ -379,25 +336,24 @@ for p_data in param_folders:
     Lx, Ly, L = 0, 0, 0
 
     # --- DIMENSION DETECTION & TARGET ROUTING ---
-    if current_dim_label == "RINGS" or ("geometry" in data["parameters"] and data["parameters"]["geometry"] == "RINGS"):
+    if current_dim_label == "RINGS":
         dim = "RINGS"
-        # TODO: rings logic, not necessary rn, when making the dynamics check out this
-        num_rings_val = data["parameters"].get("num_rings", t_num_rings)
-        delta_factor_val = data["parameters"].get("delta_factor", t_dfact_rings)
-        L_list = data["parameters"].get("L", [0, 0])
-        Lx, Ly = L_list[0] if isinstance(L_list, list) else L_list, L_list[1] if isinstance(L_list, list) else L_list
+        # Extract RINGS specific parameters from the JSON summary
+        num_rings_val = data["parameters"].get("num_rings", 1)
+        Lx = data["parameters"].get("Lx", 0)
+        Ly = data["parameters"].get("Ly", 0)
+
+        # Target matching for global plots (Cross-Dimensional and R vs p)
         target_Tmax, target_N = t_Tmax_rings, t_N_rings
         target_c, target_cpos, target_cneg = t_c_rings, t_cpos_rings, t_cneg_rings
-        target_d0, target_dr = t_d0_rings, t_dr_rings
-        # target_p_fss = t_pfss_rings TODO: fractal
+        # Note: we don't match d0/dr here because they are calibrated for each Nr
+
         match_topology = (round(c, 3) == round(target_c, 3) and
                           round(cpos, 3) == round(target_cpos, 3) and
                           round(cneg, 3) == round(target_cneg, 3) and
-                          round(d0, 3) == round(target_d0, 3) and
-                          round(dr, 3) == round(target_dr, 3) and
                           Tmax == target_Tmax and
-                          num_rings_val == t_num_rings and
-                          round(delta_factor_val, 2) == round(t_dfact_rings, 2))
+                          N == target_N and
+                          num_rings_val in t_num_rings)
 
     elif current_dim_label == "2D":
         dim = 2
@@ -410,7 +366,6 @@ for p_data in param_folders:
         target_c, target_cpos, target_cneg = t_c_2d, t_cpos_2d, t_cneg_2d
         target_d0, target_dr = t_d0_2d, t_dr_2d
         target_RC = t_RC_2d
-        # target_p_fss = t_pfss_2d TODO: fractal
 
         match_topology = (round(c, 3) == round(target_c, 3) and
                           round(cpos, 3) == round(target_cpos, 3) and
@@ -430,7 +385,6 @@ for p_data in param_folders:
         target_c, target_cpos, target_cneg = t_c_1d, t_cpos_1d, t_cneg_1d
         target_d0, target_dr = t_d0_1d, t_dr_1d
         target_RC = 1.0
-        # target_p_fss = t_pfss_1d TODO: fractal
 
         match_topology = (round(c, 3) == round(target_c, 3) and
                           round(cpos, 3) == round(target_cpos, 3) and
@@ -497,11 +451,12 @@ for p_data in param_folders:
                 s_data = json.load(sf)
 
             # Add all the degree values to the corresponding global lists for the histograms
-            k_exp_arr["structural"].extend(s_data["degrees_arrays"]["k_real_array"])
-            k_exp_arr["out_pos"].extend(s_data["degrees_arrays"]["kappa_out_pos_array"])
-            k_exp_arr["out_neg"].extend(s_data["degrees_arrays"]["kappa_out_neg_array"])
-            k_exp_arr["in_pos"].extend(s_data["degrees_arrays"]["kappa_in_pos_array"])
-            k_exp_arr["in_neg"].extend(s_data["degrees_arrays"]["kappa_in_neg_array"])
+                # Use np.ravel() to guarantee 1D arrays, as sparse matrices in RINGS save them as 2D lists [[x], [y]]
+                k_exp_arr["structural"].extend(np.ravel(s_data["degrees_arrays"]["k_real_array"]))
+                k_exp_arr["out_pos"].extend(np.ravel(s_data["degrees_arrays"]["kappa_out_pos_array"]))
+                k_exp_arr["out_neg"].extend(np.ravel(s_data["degrees_arrays"]["kappa_out_neg_array"]))
+                k_exp_arr["in_pos"].extend(np.ravel(s_data["degrees_arrays"]["kappa_in_pos_array"]))
+                k_exp_arr["in_neg"].extend(np.ravel(s_data["degrees_arrays"]["kappa_in_neg_array"]))
 
             # Add seed-level mean distances to calculate the ensemble standard deviation later
             seed_mean_distances_t0.append(s_data["distances"]["mean_hops_t0"])
@@ -593,7 +548,8 @@ for p_data in param_folders:
             mean_r_arr = RT_mean_time_series[:, 0]
             std_r_arr = RT_std_time_series[:, 0]
 
-            ts_dict = {'p': p, 'time': time_arr, 'R': mean_r_arr, 'R_std': std_r_arr}
+            ts_dict = {'p': p, 'time': time_arr, 'R': mean_r_arr, 'R_std': std_r_arr,
+                       'num_rings': num_rings_val if dim == "RINGS" else None}
 
             # 2. VIOLIN PLOT FLUCTUATIONS
             # This takes all the seeds value of the giant component and concatenates them into a single array, but only
@@ -601,7 +557,8 @@ for p_data in param_folders:
             # configuration. This is used for the violin plot of R fluctuations across p.
             raw_fluctuations = RT_tensor[:, TT:, 0].flatten()
 
-            fluct_data = [{'p': p, 'R': r_val} for r_val in raw_fluctuations]
+            fluct_data = [{'p': p, 'R': r_val, 'num_rings': num_rings_val if dim == "RINGS" else None}
+                          for r_val in raw_fluctuations]
 
             if dim == 1:
                 global_R_time_series_1D.append(ts_dict)
@@ -626,7 +583,8 @@ for p_data in param_folders:
                     'p': p,
                     'dist_t0': mean_dist_t0,
                     'dist_tmax': mean_dist_tmax,
-                    'dist_tmax_std': std_dist_tmax
+                    'dist_tmax_std': std_dist_tmax,
+                    'num_rings': num_rings_val if dim == "RINGS" else None
                 }
 
                 if dim == 1:
@@ -647,11 +605,19 @@ for p_data in param_folders:
             seed_steady_means = np.mean(steady_tensor, axis=1)
             r_std_total = np.std(seed_steady_means, ddof=1)
 
+            # THERMODYNAMIC SUSCEPTIBILITY (chi)
+            # chi = N * ( <R^2> - <R>^2 ). It measures the fluctuations of the giant component size
+            # across different universes (seeds). It will peak exactly at the critical point p_c.
+            susceptibility = N * (r_std_total ** 2)
+
             r_vs_p_dict = {
                 'p': p,
                 'R_mean': r_mean_total,
                 'R_std': r_std_total,
-                'c': c, 'cpos': cpos, 'cneg': cneg, 'd0': d0, 'dr': dr
+                'susceptibility': susceptibility,
+                'c': c, 'cpos': cpos, 'cneg': cneg, 'd0': d0, 'dr': dr,
+                'Tmax': Tmax,
+                'num_rings': num_rings_val if dim == "RINGS" else None
             }
 
             if dim == 1:
@@ -660,6 +626,33 @@ for p_data in param_folders:
                 global_R_vs_p_RINGS.append(r_vs_p_dict)
             elif dim == 2:
                 global_R_vs_p_2D.append(r_vs_p_dict)
+
+        # 5. ASYMPTOTIC LIMITS EXTRACTION (For Master Plots)
+        # Explicitly isolates the specific 1D and 2D runs intended as boundaries for the RINGS model.
+        is_1D_limit = (dim == 1 and Tmax == t_Tmax_rings and N == t_N_rings and
+                       round(d0, 3) == round(t_limit_d0_1d, 3) and round(dr, 3) == round(t_limit_d0_1d, 3) and
+                       round(c, 3) == round(t_c_rings, 3) and round(cpos, 3) == round(t_cpos_rings,3) and
+                       round(cneg,3) == round(t_cneg_rings, 3))
+
+        is_2D_limit = (dim == 2 and Tmax == t_Tmax_rings and N == t_N_rings and
+                       round(d0, 3) == round(t_limit_d0_2d, 3) and round(dr, 3) == round(t_limit_d0_2d, 3) and
+                       round(c, 3) == round(t_c_rings, 3) and round(cpos, 3) == round(t_cpos_rings,3) and
+                       round(cneg, 3) == round(t_cneg_rings, 3))
+
+        if is_1D_limit or is_2D_limit:
+            steady_tensor_lim = RT_tensor[:, TT:, 0]
+            r_mean_lim = np.mean(steady_tensor_lim)
+            seed_steady_means_lim = np.mean(steady_tensor_lim, axis=1)
+            r_std_lim = np.std(seed_steady_means_lim, ddof=1)
+            susceptibility_lim = N * (r_std_lim ** 2)
+
+            lim_dict = {
+                'p': p, 'R_mean': r_mean_lim, 'R_std': r_std_lim, 'susceptibility': susceptibility_lim,
+                'num_rings': None
+            }
+
+            if is_1D_limit: master_limit_1D.append(lim_dict)
+            if is_2D_limit: master_limit_2D.append(lim_dict)
 
     # ---------------------------------------------------------
     # CONDITION FOR GENERATING LOCAL PLOTS (TIME SAVER)
@@ -674,80 +667,49 @@ for p_data in param_folders:
         # 3. DEGREE DISTRIBUTION HISTOGRAMS
         # ---------------------------------------------------------
         print("-> Generating Degree Distributions...")
-
-        def get_integer_bins(min_val, max_val, max_bins=30):
-            """
-            Generates bin edges perfectly centered on integers.
-            If the range is too large, it groups integers to keep a maximum number of bins.
-
-            :param min_val: int, minimum value in the data
-            :param max_val: int, maximum value in the data
-            :param max_bins: int, maximum number of bins
-            :return: np.array, bin edges for histogram
-            """
-            rng = max_val - min_val
-            if rng == 0:
-                return np.array([min_val - 0.5, min_val + 0.5])
-            if rng <= max_bins:
-                # One bin per exact integer (perfect for small degrees)
-                return np.arange(min_val - 0.5, max_val + 1.5, 1)
-            else:
-                # Group integers (e.g., step of 5 or 10) to avoid 250 microscopic bars
-                step = int(np.ceil(rng / max_bins))
-                return np.arange(min_val - 0.5, max_val + step + 0.5, step)
-
         # Structural Degree (physically connected nodes)
-        min_k = min(k_exp_arr['structural'])
-        max_k = max(k_exp_arr['structural'])
-        bins_k = get_integer_bins(min_k, max_k)
-
         plt.figure(figsize=(6, 4))
-        sns.histplot(k_exp_arr['structural'], bins=bins_k, color='skyblue', kde=True, stat='density')
+        sns.histplot(np.ravel(k_exp_arr['structural']), discrete=True, color='skyblue', stat='probability', alpha=0.8)
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.axvline(k_theo['structural'], color='red', linestyle='--', linewidth=2,
                     label=f"Theo Mean: {k_theo['structural']:.2f}")
         plt.title("Structural Degree Distribution P(k)")
         plt.xlabel("Degree k (Connections per node)")
-        plt.ylabel("Density")
+        plt.ylabel("Probability")
         plt.legend()
         plt.tight_layout()
         plt.savefig(os.path.join(fig_dir, f"hist_structural_degree_p{p:.2f}.png"), dpi=400)
         plt.close()
 
         # Regulatory Out-Degree (nodes regulating links)
-        min_out = min(min(k_exp_arr['out_pos']), min(k_exp_arr['out_neg']))
-        max_out = max(max(k_exp_arr['out_pos']), max(k_exp_arr['out_neg']))
-        bins_out = get_integer_bins(min_out, max_out)
-
         plt.figure(figsize=(6, 4))
-        sns.histplot(k_exp_arr['out_pos'], bins=bins_out, color='green', alpha=0.5, kde=False, stat='density',
+        sns.histplot(np.ravel(k_exp_arr['out_pos']), discrete=True, color='green', alpha=0.5, stat='probability',
                      label='Positive (+)')
-        sns.histplot(k_exp_arr['out_neg'], bins=bins_out, color='red', alpha=0.5, kde=False, stat='density',
+        sns.histplot(np.ravel(k_exp_arr['out_neg']), discrete=True, color='red', alpha=0.5, stat='probability',
                      label='Negative (-)')
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.axvline(k_theo['out_pos'], color='darkgreen', linestyle='--', linewidth=2, label='Theo. Mean (+)')
         plt.axvline(k_theo['out_neg'], color='darkred', linestyle='--', linewidth=2, label='Theo. Mean (-)')
         plt.title("Regulatory Out-Degree Distribution P(k_out)")
         plt.xlabel("Out-Degree (Nodes regulating links)")
-        plt.ylabel("Density")
+        plt.ylabel("Probability")
         plt.legend()
         plt.tight_layout()
         plt.savefig(os.path.join(fig_dir, f"hist_regulatory_out_degree_p{p:.2f}.png"), dpi=400)
         plt.close()
 
         # Regulatory In-Degree (links regulated by nodes)
-        min_in = min(min(k_exp_arr['in_pos']), min(k_exp_arr['in_neg']))
-        max_in = max(max(k_exp_arr['in_pos']), max(k_exp_arr['in_neg']))
-        bins_in = get_integer_bins(min_in, max_in)
-
         plt.figure(figsize=(6, 4))
-        sns.histplot(k_exp_arr['in_pos'], bins=bins_in, color='green', alpha=0.5, kde=False, stat='density',
+        sns.histplot(np.ravel(k_exp_arr['in_pos']), discrete=True, color='green', alpha=0.5, stat='probability',
                      label='Positive (+)')
-        sns.histplot(k_exp_arr['in_neg'], bins=bins_in, color='red', alpha=0.5, kde=False, stat='density',
+        sns.histplot(np.ravel(k_exp_arr['in_neg']), discrete=True, color='red', alpha=0.5, stat='probability',
                      label='Negative (-)')
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.axvline(k_theo['in_pos'], color='darkgreen', linestyle='--', linewidth=2, label='Theo. Mean (+)')
         plt.axvline(k_theo['in_neg'], color='darkred', linestyle='--', linewidth=2, label='Theo. Mean (-)')
         plt.title("Regulatory In-Degree Distribution P(k_in)")
         plt.xlabel("In-Degree (Links regulated by nodes)")
-        plt.ylabel("Density")
+        plt.ylabel("Probability")
         plt.legend()
         plt.tight_layout()
         plt.savefig(os.path.join(fig_dir, f"hist_regulatory_in_degree_p{p:.2f}.png"), dpi=400)
@@ -756,7 +718,7 @@ for p_data in param_folders:
         # ---------------------------------------------------------
         # 4. TOPOLOGY & DISTANCE PLOTS
         # ---------------------------------------------------------
-        print("-> Generating Topology & Fractal Plots...")
+        print("-> Generating Topology Plots...")
 
         # Conditionals
         t0_plot = len(path_length_hops["t0"]) > 0
@@ -770,19 +732,15 @@ for p_data in param_folders:
 
         # A.1. Topological Distance Histogram (t=0)
         if t0_plot:
-            # Calculate bins
-            min_hop_t0 = min(path_length_hops["t0"])
-            max_hop_t0 = max(path_length_hops["t0"])
-            bins_t0 = get_integer_bins(min_hop_t0, max_hop_t0)
-
             plt.figure(figsize=(6, 4))
-            sns.histplot(path_length_hops["t0"], bins=bins_t0, color='mediumpurple', edgecolor='black',
-                         alpha=0.7, stat='density', kde=False)
+            sns.histplot(path_length_hops["t0"], discrete=True, color='mediumpurple',
+                         edgecolor='black', alpha=0.7, stat='probability')
+            plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             plt.axvline(mean_hops_t0, color='red', linestyle='dashed', linewidth=2,
                         label=f'Mean (t=0): {mean_hops_t0:.2f}')
             plt.title("Topological Distance Distribution at t=0")
             plt.xlabel("Number of Hops (Topological Distance)")
-            plt.ylabel("Density")
+            plt.ylabel("Probability")
             plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(fig_dir, f"hist_topological_distances_t0_p{p:.2f}.png"), dpi=400)
@@ -790,19 +748,15 @@ for p_data in param_folders:
 
         # A.2. Topological Distance Histogram (t=Tmax)
         if tmax_plot:
-            # Calculate bins
-            min_hop_tmax = min(path_length_hops["tmax"])
-            max_hop_tmax = max(path_length_hops["tmax"])
-            bins_tmax = get_integer_bins(min_hop_tmax, max_hop_tmax)
-
             plt.figure(figsize=(6, 4))
-            sns.histplot(path_length_hops["tmax"], bins=bins_tmax, color='darkorange', edgecolor='black',
-                         alpha=0.7, stat='density', kde=False)
+            sns.histplot(path_length_hops["tmax"], discrete=True, color='darkorange',
+                         edgecolor='black', alpha=0.7, stat='probability')
+            plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             plt.axvline(mean_hops_tmax, color='red', linestyle='dashed', linewidth=2,
                         label=f'Mean (t=Tmax): {mean_hops_tmax:.2f}')
             plt.title("Active Topological Distance Distribution at t=Tmax")
             plt.xlabel("Number of Hops (Topological Distance)")
-            plt.ylabel("Density")
+            plt.ylabel("Probability")
             plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(fig_dir, f"hist_topological_distances_tfinal_p{p:.2f}.png"), dpi=400)
@@ -810,17 +764,13 @@ for p_data in param_folders:
 
         # A.3. Topological Distance Histogram (Combined t=0 vs t=Tmax)
         if t0_plot and tmax_plot:
-            # Calculate bins
-            global_min_hop = min(min(path_length_hops["t0"]), min(path_length_hops["tmax"]))
-            global_max_hop = max(max(path_length_hops["t0"]), max(path_length_hops["tmax"]))
-            global_bins = get_integer_bins(global_min_hop, global_max_hop)
-
             plt.figure(figsize=(6, 4))
             # Plot both histograms with transparency
-            sns.histplot(path_length_hops["t0"], bins=global_bins, color='mediumpurple', edgecolor='black',
-                         alpha=0.5, stat='density', kde=False, label='t=0 (Structural)')
-            sns.histplot(path_length_hops["tmax"], bins=global_bins, color='darkorange', edgecolor='black',
-                         alpha=0.5, stat='density', kde=False, label='t=Tmax (Active)')
+            sns.histplot(path_length_hops["t0"], discrete=True, color='mediumpurple',
+                         edgecolor='black', alpha=0.5, stat='probability', label='t=0 (Structural)')
+            sns.histplot(path_length_hops["tmax"], discrete=True, color='darkorange',
+                         edgecolor='black', alpha=0.5, stat='probability', label='t=Tmax (Active)')
+            plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
             plt.axvline(mean_hops_t0, color='purple', linestyle='dashed', linewidth=2,
                         label=f'Mean t=0 ({mean_hops_t0:.1f})')
             plt.axvline(mean_hops_tmax, color='orangered', linestyle='dashed', linewidth=2,
@@ -828,7 +778,7 @@ for p_data in param_folders:
 
             plt.title("Topological Distance Shift (Structural vs Active)")
             plt.xlabel("Number of Hops (Topological Distance)")
-            plt.ylabel("Density")
+            plt.ylabel("Probability")
             plt.legend()
             plt.tight_layout()
             plt.savefig(os.path.join(fig_dir, f"hist_topological_distances_combined_p{p:.2f}.png"), dpi=400)
@@ -842,18 +792,33 @@ for p_data in param_folders:
             # Overlay theoretical exponential decay: P(d) ~ exp(-d/d0)
             x_vals = np.linspace(0, max(links_length_distance), 1000)
             # Overlay theoretical decay based on dimensionality
-            if dim == 1:
+            if dim == "RINGS":
+                # 1D: Pure exponential decay
+                y_1d = (1 / d0) * np.exp(-x_vals / d0)
+                plt.plot(x_vals, y_1d, color='purple', linewidth=2, linestyle=':',
+                         label=r'1D Limit: $e^{-d/d_0}$')
+
+                # 2D: Probability proportional to ring area (d) * exponential decay
+                # As Nr increases, the discrete model converges to this continuous PDF
+                y_2d = (x_vals / (d0 ** 2)) * np.exp(-x_vals / d0)
+                plt.plot(x_vals, y_2d, color='red', linewidth=2, linestyle='--',
+                         label=r'2D Limit: $d \cdot e^{-d/d_0}$')
+
+                plt.title(f"Link Lengths: Dimensional Crossover (Nr={int(num_rings_val)})")
+            elif dim == 1:
                 # 1D: Pure exponential decay
                 y_vals = (1 / d0) * np.exp(-x_vals / d0)
                 plt.plot(x_vals, y_vals, color='red', linewidth=2, linestyle='--', label=r'Theory: $P(d) = '
                                                                                          r'\frac{1}{d_0} e^{-d/d_0}$')
-            elif dim == 2 or dim == "RINGS":    # TODO: rings?
+                plt.title("Physical Link Length Distribution (1D)")
+            elif dim == 2:
                 # 2D: Probability proportional to ring area (d) * exponential decay
                 # The normalized PDF is (x / d0^2) * exp(-x/d0)
                 y_vals = (x_vals / (d0 ** 2)) * np.exp(-x_vals / d0)
                 plt.plot(x_vals, y_vals, color='red', linewidth=2, linestyle='--',
                          label=r'Theory: $P(d) = \frac{d}{d_0^2} e^{-d/d_0}$')
-            plt.title("Physical Link Length Distribution")
+                plt.title("Physical Link Length Distribution (2D)")
+
             plt.xlabel("Physical Distance (Geometry)")
             plt.ylabel("Density")
             plt.legend()
@@ -889,85 +854,6 @@ for p_data in param_folders:
             plt.tight_layout()
             plt.savefig(os.path.join(fig_dir, f"topo_vs_geom_p{p:.2f}.png"), dpi=400)
             plt.close()
-
-        # TODO: fractal
-        # # C. Fractal Dimension (Hausdorff) with slope comparisons
-        # r_vals = np.asarray(topo_data['r_vals'])
-        # N_r_vals = np.asarray(topo_data['N_r_vals'])
-        #
-        # # 1. Clean the data (remove the flat line)
-        # valid_indices = (r_vals > 0) & (N_r_vals > 0)
-        # r_clean = r_vals[valid_indices]
-        # N_clean = N_r_vals[valid_indices]
-        #
-        # # Find the exact moment the network saturates (reaches maximum nodes)
-        # # and cut the arrays there so we don't plot an infinite flat line.
-        # first_max_idx = np.argmax(N_clean)
-        # r_clean = r_clean[:first_max_idx + 1]
-        # N_clean = N_clean[:first_max_idx + 1]
-        #
-        # log_r = np.log10(r_clean)
-        # log_N = np.log10(N_clean)
-        #
-        # if target_p_fss is not None and round(p, 3) == round(target_p_fss, 3) and match_topology:
-        #     if dim == 1:
-        #         global_fractal_data_1D.append({
-        #             'N': N,
-        #             'log_r': log_r,
-        #             'log_N': log_N
-        #         })
-        #     elif dim == "RINGS":
-        #         global_fractal_data_RINGS.append({
-        #             'N': N,
-        #             'log_r': log_r,
-        #             'log_N': log_N
-        #         })
-        #     elif dim == 2:
-        #         global_fractal_data_2D.append({
-        #             'N': N,
-        #             'log_r': log_r,
-        #             'log_N': log_N
-        #         })
-        #
-        # plt.figure(figsize=(6, 4))
-        # plt.plot(log_r, log_N, marker='o', linestyle='-', color='teal', linewidth=2, label='Simulation Data')
-        #
-        # if len(log_r) >= 3:
-        #     x_start, y_start = log_r[0], log_N[0]
-        #     x_final, y_final = log_r[-1], log_N[-1]
-        #
-        #     # 2. Calculate crossover point mathematically
-        #     # Line early: y = 4 * (x - x_start) + y_start
-        #     # Line late:  y = 1 * (x - x_final) + y_final
-        #     # Intersection (3x = 4*x_start - x_final + y_final - y_start):
-        #     x_cross = (4 * x_start - x_final + y_final - y_start) / 3.0
-        #     y_cross = 4.0 * (x_cross - x_start) + y_start
-        #
-        #     # 3. Early theory (slope = 4)
-        #     # Extend from the first point to slightly past the crossover
-        #     x_early = np.array([x_start, x_cross + 0.1])
-        #     y_early = 4.0 * (x_early - x_start) + y_start
-        #     plt.plot(x_early, y_early, color='orange', linestyle='--', linewidth=2.5,
-        #              label=r'Early Theory ($d_H=4$)')
-        #
-        #     # 4. Asymptotic theory (slope = 1)
-        #     # Extend from slightly before the crossover to the final point
-        #     x_late = np.array([max(0, x_cross - 0.1), x_final])
-        #     y_late = 1.0 * (x_late - x_final) + y_final
-        #     plt.plot(x_late, y_late, color='red', linestyle='--', linewidth=2.5,
-        #              label=r'Asymptotic Theory ($d_H=1$)')
-        #
-        #     # Mark the crossover point
-        #     plt.plot(x_cross, y_cross, 'ko', markersize=5, label=r'Crossover Scale ($r_\times$)')
-        #
-        # plt.title("Fractal Dimension Scaling (Hausdorff)")
-        # plt.xlabel(r"$\log_{10}(r)$ [Topological Radius / Hops]")
-        # plt.ylabel(r"$\log_{10}(N(r))$ [Cumulative Mass / Nodes]")
-        # plt.grid(True, linestyle=':', alpha=0.7)
-        # plt.legend()
-        # plt.tight_layout()
-        # plt.savefig(os.path.join(fig_dir, f"fractal_dimension_p{p:.2f}.png"), dpi=400)
-        # plt.close()
 
         # ---------------------------------------------------------
         # 5. TIME DYNAMICS PLOTS
@@ -1397,7 +1283,7 @@ for p_data in param_folders:
                     # s=0.5 makes the points smaller, and alpha=0.8 gives them some transparency to better visualize
                     # overlaps
                     plt.scatter(active_times, y_positions, color='black', s=0.5, alpha=0.8)
-                    plt.title(f"Spatiotemporal Evolution (p={p:.2f})")
+                    plt.title(f"Giant Component Spatiotemporal Evolution (p={p:.2f})")
                     plt.xlabel('Time (iterations)')
                     plt.ylabel('Spatial Position (L)')
                     plt.xlim(0, Tmax)
@@ -1425,7 +1311,7 @@ for p_data in param_folders:
                     sc = plt.scatter(nodes_coords[:, 0], nodes_coords[:, 1], c=activation_freq,
                                      cmap='magma', s=3, alpha=0.6)
                     plt.colorbar(sc, label='Activation Frequency')
-                    plt.title(f"2D Spatial Activity Heatmap (p={p:.2f})")
+                    plt.title(f"Giant Component Spatial Activity Heatmap (p={p:.2f})")
                     plt.xlabel('X Position')
                     plt.ylabel('Y Position')
                     plt.xlim(0, Lx)
@@ -1448,290 +1334,436 @@ global_data_collections = {
         "fluctuations": all_R_fluctuations_1D,
         "distances": steady_state_distances_1D,
         "R_vs_p": global_R_vs_p_1D
-        # "fractal": global_fractal_data_1D TODO: fractal
     },
     "RINGS": {
         "time_series": global_R_time_series_RINGS,
         "fluctuations": all_R_fluctuations_RINGS,
         "distances": steady_state_distances_RINGS,
         "R_vs_p": global_R_vs_p_RINGS
-        # "fractal": global_fractal_data_RINGS TODO: fractal
     },
     "2D": {
         "time_series": global_R_time_series_2D,
         "fluctuations": all_R_fluctuations_2D,
         "distances": steady_state_distances_2D,
         "R_vs_p": global_R_vs_p_2D
-        # "fractal": global_fractal_data_2D TODO: fractal
     }
 }
 
 for current_dim, g_data in global_data_collections.items():
     # Skip if no data exists for this dimension
-    if not g_data["time_series"] and not g_data["R_vs_p"] and not g_data.get("fractal"):
+    if not g_data["time_series"] and not g_data["R_vs_p"]:
         continue
 
     print(f"\n-> Generating global comparative plots for {current_dim}...")
-    global_fig_dir = os.path.join(base_dirs[current_dim], "global_figures")
-    os.makedirs(global_fig_dir, exist_ok=True)
+    base_global_fig_dir = os.path.join(base_dirs[current_dim], "global_figures")
 
-    # Get the specific target used for this dimension (for titles)
-    dim_N = {"1D": t_N_1d, "RINGS": t_N_rings}.get(current_dim, t_N_2d)
-    # TODO: fractal (dim)
+    # Identify unique ring resolutions in the data (will be [None] for 1D and 2D)
+    if g_data["R_vs_p"]:
+        # Extract unique, non-null ring values and sort them
+        unique_rings = sorted(list(set(d.get('num_rings') for d in g_data["R_vs_p"])))
+    else:
+        unique_rings = [None]
 
-    # 1. COMPARATIVE TIME EVOLUTION OF R FOR ALL THE GENERATED P
-    if g_data["time_series"]:
-        print("-> Generating global Time Dynamics comparison...")
-        plt.figure(figsize=(8, 5))
-
-        # Sort the series by 'p' so the legend appears ordered
-        sorted_ts = sorted(g_data["time_series"], key=lambda x: x['p'])
-
-        # Create a color palette to differentiate 'p' values
-        colors = sns.color_palette("viridis", n_colors=len(sorted_ts))
-
-        for i, data_series in enumerate(sorted_ts):
-            plt.plot(data_series['time'], data_series['R'], color=colors[i],
-                     linewidth=1.5, label=f"p = {data_series['p']:.2f}")
-
-            if 'R_std' in data_series:
-                plt.fill_between(data_series['time'],
-                                 np.clip(data_series['R'] - data_series['R_std'], 0, 1),
-                                 np.clip(data_series['R'] + data_series['R_std'], 0, 1),
-                                 color=colors[i], alpha=0.1)
-
-        plt.title(f"Evolution of the Giant Component over Time ({current_dim}, N={dim_N})")
-        plt.xlabel("Time (iterations)")
-        plt.ylabel("Fraction of Active Nodes (R)")
-        plt.ylim(0, 1.05)
-        plt.grid(True, linestyle='--', alpha=0.5)
-
-        # Move the legend outside the plot so it doesn't overlap the curves
-        plt.legend(title="Control Parameter", bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.tight_layout()
-        plt.savefig(os.path.join(global_fig_dir, "global_R_vs_Time_comparison.png"), dpi=400)
-        plt.close()
-
-    # 2. VIOLIN PLOT FOR R FLUCTUATIONS IN 1 DIMENSION
-    if g_data["fluctuations"]:
-        print("-> Generating global Fluctuations comparison...")
-        df_fluctuations = pd.DataFrame(g_data["fluctuations"])
-        df_fluctuations['p_label'] = df_fluctuations['p'].apply(lambda x: f"{x:.2f}")
-
-        plt.figure(figsize=(8, 5))
-
-        sns.violinplot(data=df_fluctuations, x='p_label', y='R', hue='p_label', palette='viridis',
-                       inner=None, linewidth=1, density_norm='width', legend=False)
-        sns.stripplot(data=df_fluctuations, x='p_label', y='R', size=2.5, color='black',
-                      alpha=0.3, jitter=True, legend=False)
-
-        plt.title(f"Steady State Fluctuations of R ({current_dim}, N={dim_N})")
-        plt.xlabel("Control Parameter (p)")
-        plt.ylabel("Fraction of Active Nodes (R)")
-        plt.ylim(0, 1.05)
-        plt.grid(True, linestyle='--', alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(os.path.join(global_fig_dir, "global_violin_fluctuations_R.png"), dpi=400)
-        plt.close()
-
-    # 3. DISTANCE VS P PLOT IN 1 DIMENSION
-    if g_data["distances"]:
-        print("-> Generating global Distance vs p comparison plot...")
-        df_distances = pd.DataFrame(g_data["distances"]).sort_values(by='p')
-        plt.figure(figsize=(6, 4))
-
-        # Plotting baseline t=0 (taking the mean of all t=0 distances as reference)
-        avg_baseline = df_distances['dist_t0'].mean()
-        plt.axhline(avg_baseline, color='gray', linestyle='--', linewidth=2,
-                    label=f'Structural baseline (t=0): {avg_baseline:.2f}')
-
-        if 'dist_tmax_std' in df_distances.columns:
-            plt.errorbar(df_distances['p'], df_distances['dist_tmax'],
-                         yerr=df_distances['dist_tmax_std'],
-                         fmt='o-', color='darkorange', linewidth=2, markersize=6,
-                         capsize=4, capthick=1.5, label='Steady State (t=Tmax)')
+    # Iterate over each resolution to isolate their global plots
+    for ring_val in unique_rings:
+        # 1. SETUP DIRECTORY AND TITLES
+        if ring_val is not None:
+            # RINGS model: Create subfolders for each resolution (e.g., global_figures/Nr_5/)
+            global_fig_dir = os.path.join(base_global_fig_dir, f"Nr_{int(ring_val)}")
+            dim_title_suffix = f"{current_dim}, Nr={int(ring_val)}, N={t_N_rings}"
         else:
-            # Fallback if no std is available, just plot the points without error bars
-            plt.plot(df_distances['p'], df_distances['dist_tmax'], marker='o',
-                     color='darkorange', linestyle='-', linewidth=2, markersize=6,
-                     label='Steady State (t=Tmax)')
+            # 1D/2D models: Standard global directory
+            global_fig_dir = base_global_fig_dir
+            dim_N = t_N_1d if current_dim == "1D" else t_N_2d
+            dim_title_suffix = f"{current_dim}, N={dim_N}"
 
-        plt.title(f"Steady State Topological Distance vs p ({current_dim}, N={dim_N})")
-        plt.xlabel("Control Parameter (p)")
-        plt.ylabel("Average Shortest Path (Hops)")
-        plt.legend(loc='best')
-        plt.grid(True, linestyle='--', alpha=0.6)
-        plt.tight_layout()
-        plt.savefig(os.path.join(global_fig_dir, "global_distance_vs_p.png"), dpi=400)
-        plt.close()
+        os.makedirs(global_fig_dir, exist_ok=True)
 
-    # 4. R VS P COMPARISON PLOT (MULTIPLE LINES FOR DIFFERENT PARAMETERS)
-    if do_param_comparison and g_data["R_vs_p"]:
-        print("-> Generating R vs p parameter comparison plot...")
-        df_params = pd.DataFrame(g_data["R_vs_p"])
+        # 2. FILTER DATA FOR THIS SPECIFIC RESOLUTION
+        filt_ts = [d for d in g_data["time_series"] if d.get('num_rings') == ring_val]
+        filt_fl = [d for d in g_data["fluctuations"] if d.get('num_rings') == ring_val]
+        filt_di = [d for d in g_data["distances"] if d.get('num_rings') == ring_val]
+        filt_rp = [d for d in g_data["R_vs_p"] if d.get('num_rings') == ring_val]
 
-        # Automatically detect which parameters actually vary in your folders (excluding 'p' and 'R_mean')
-        param_cols = ['c', 'cpos', 'cneg', 'd0', 'dr']
-        varying_params = [col for col in param_cols if df_params[col].nunique() > 1]
+        # 3. GENERATE PLOTS USING FILTERED DATA
+        # A. COMPARATIVE TIME EVOLUTION OF R FOR ALL THE GENERATED P
+        if filt_ts:
+            print(f"-> Generating global Time Dynamics comparison for {dim_title_suffix}...")
+            plt.figure(figsize=(8, 5))
 
-        plt.figure(figsize=(8, 6))
+            # Sort the series by 'p' so the legend appears ordered
+            sorted_ts = sorted(filt_ts, key=lambda x: x['p'])
 
-        if not varying_params:
-            # If no parameters varied (you only tested different p's for one network setup)
-            grouped = df_params.groupby('p').mean(numeric_only=True).reset_index()
-            y_err = grouped['R_std'] if 'R_std' in grouped.columns else None
-            plt.errorbar(grouped['p'], grouped['R_mean'], yerr=y_err, fmt='o-',
-                         linewidth=2, elinewidth=1, capsize=0, alpha=0.8,
-                         color='magenta', label='Base parameters')
-        else:
-            # ADAPTIVE VISUAL STRATEGY BASED ON NUMBER OF VARYING PARAMETERS
-            num_vars = len(varying_params)
+            # Create a color palette to differentiate 'p' values
+            colors = sns.color_palette("viridis", n_colors=len(sorted_ts))
 
-            # Define visual scales available for mapping
-            line_styles = ['-', '--', ':', '-.']
-            markers = ['o', 's', '^', 'D', 'v', 'p', '*']
+            for i, data_series in enumerate(sorted_ts):
+                plt.plot(data_series['time'], data_series['R'], color=colors[i],
+                         linewidth=1.5, label=f"p = {data_series['p']:.2f}")
 
-            # Create dynamic mappings for the varying parameters
-            if num_vars == 1:
-                # 1 Variable: Use a sequential colormap (Intensity implies magnitude)
-                unique_p1 = sorted(df_params[varying_params[0]].unique())
-                colors = sns.color_palette("viridis", n_colors=len(unique_p1))
-                color_map = dict(zip(unique_p1, colors))
+                if 'R_std' in data_series:
+                    plt.fill_between(data_series['time'],
+                                     np.clip(data_series['R'] - data_series['R_std'], 0, 1),
+                                     np.clip(data_series['R'] + data_series['R_std'], 0, 1),
+                                     color=colors[i], alpha=0.1)
 
-            elif num_vars >= 2:
-                # 2+ Variables: 1st is Color (Categorical), 2nd is Line Style
-                unique_p1 = sorted(df_params[varying_params[0]].unique())
-                colors = sns.color_palette("tab10", n_colors=len(unique_p1))
-                color_map = dict(zip(unique_p1, colors))
+            plt.title(f"Evolution of the Giant Component over Time ({dim_title_suffix})")
+            plt.xlabel("Time (iterations)")
+            plt.ylabel("Fraction of Active Nodes (R)")
+            plt.ylim(0, 1.05)
+            plt.grid(True, linestyle='--', alpha=0.5)
 
-                unique_p2 = sorted(df_params[varying_params[1]].unique())
-                # Use modulo to avoid IndexError if there are many unique values
-                style_map = {val: line_styles[i % len(line_styles)] for i, val in enumerate(unique_p2)}
+            # Move the legend outside the plot so it doesn't overlap the curves
+            plt.legend(title="Control Parameter", bbox_to_anchor=(1.05, 1), loc='upper left')
+            plt.tight_layout()
+            plt.savefig(os.path.join(global_fig_dir, "global_R_vs_Time_comparison.png"), dpi=400)
+            plt.close()
 
-                if num_vars >= 3:
-                    # 3+ Variables: 3rd is Marker shape
-                    unique_p3 = sorted(df_params[varying_params[2]].unique())
-                    marker_map = {val: markers[i % len(markers)] for i, val in enumerate(unique_p3)}
+        # B. VIOLIN PLOT FOR R FLUCTUATIONS IN 1 DIMENSION
+        if filt_fl:
+            print(f"-> Generating global Fluctuations comparison for {dim_title_suffix}...")
+            df_fluctuations = pd.DataFrame(filt_fl)
+            df_fluctuations['p_label'] = df_fluctuations['p'].apply(lambda x: f"{x:.2f}")
 
-            # Group the data and plot using the mapped aesthetics
-            for name, group in df_params.groupby(varying_params):
-                group = group.sort_values(by='p')
+            plt.figure(figsize=(8, 5))
 
-                # Ensure 'name' is always a tuple for consistent unpacking
-                vals = name if isinstance(name, tuple) else (name,)
+            sns.violinplot(data=df_fluctuations, x='p_label', y='R', hue='p_label', palette='viridis',
+                           inner=None, linewidth=1, density_norm='width', legend=False)
+            sns.stripplot(data=df_fluctuations, x='p_label', y='R', size=2.5, color='black',
+                          alpha=0.3, jitter=True, legend=False)
 
-                # Create a dynamic legend label
-                label = ", ".join([f"{var}={val}" for var, val in zip(varying_params, vals)])
+            plt.title(f"Steady State Fluctuations of R ({dim_title_suffix})")
+            plt.xlabel("Control Parameter (p)")
+            plt.ylabel("Fraction of Active Nodes (R)")
+            plt.ylim(0, 1.05)
+            plt.grid(True, linestyle='--', alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(os.path.join(global_fig_dir, "global_violin_fluctuations_R.png"), dpi=400)
+            plt.close()
 
-                # Resolve aesthetics based on the mappings created above
-                c_val = color_map[vals[0]] if num_vars >= 1 else 'magenta'
-                ls_val = style_map[vals[1]] if num_vars >= 2 else '-'
-                m_val = marker_map[vals[2]] if num_vars >= 3 else 'o'
+        # C. DISTANCE VS P PLOT IN 1 DIMENSION
+        if filt_di:
+            print(f"-> Generating global Distance vs p comparison plot for {dim_title_suffix}...")
+            df_distances = pd.DataFrame(filt_di).sort_values(by='p')
+            plt.figure(figsize=(6, 4))
 
-                # Extract error if available
-                y_err = group['R_std'] if 'R_std' in group.columns else None
+            # Plotting baseline t=0 (taking the mean of all t=0 distances as reference)
+            avg_baseline = df_distances['dist_t0'].mean()
+            plt.axhline(avg_baseline, color='gray', linestyle='--', linewidth=2,
+                        label=f'Structural baseline (t=0): {avg_baseline:.2f}')
 
-                # Plot with fine error bars (elinewidth=1) and no caps to prevent visual clutter
-                plt.errorbar(group['p'], group['R_mean'], yerr=y_err,
-                             marker=m_val, linestyle=ls_val, color=c_val,
+            if 'dist_tmax_std' in df_distances.columns:
+                plt.errorbar(df_distances['p'], df_distances['dist_tmax'],
+                             yerr=df_distances['dist_tmax_std'],
+                             fmt='o-', color='darkorange', linewidth=2, markersize=6,
+                             capsize=4, capthick=1.5, label='Steady State (t=Tmax)')
+            else:
+                # Fallback if no std is available, just plot the points without error bars
+                plt.plot(df_distances['p'], df_distances['dist_tmax'], marker='o',
+                         color='darkorange', linestyle='-', linewidth=2, markersize=6,
+                         label='Steady State (t=Tmax)')
+
+            plt.title(f"Steady State Topological Distance vs p ({dim_title_suffix})")
+            plt.xlabel("Control Parameter (p)")
+            plt.ylabel("Average Shortest Path (Hops)")
+            plt.legend(loc='best')
+            plt.grid(True, linestyle='--', alpha=0.6)
+            plt.tight_layout()
+            plt.savefig(os.path.join(global_fig_dir, "global_distance_vs_p.png"), dpi=400)
+            plt.close()
+
+        # D. BASELINE R VS P PLOT (SINGLE TARGET LINE)
+        # This generates the fundamental R vs p plot for the target parameters regardless of comparison sweeps
+        if filt_rp:
+            if current_dim == "1D":
+                target_df = [d for d in filt_rp if
+                             round(d['c'], 3) == round(t_c_1d, 3) and
+                             round(d['d0'], 3) == round(t_d0_1d, 3) and
+                             d['Tmax'] == t_Tmax_1d]
+            elif current_dim == "2D":
+                target_df = [d for d in filt_rp if
+                             round(d['c'], 3) == round(t_c_2d, 3) and
+                             round(d['d0'], 3) == round(t_d0_2d, 3) and
+                             d['Tmax'] == t_Tmax_2d]
+            else:  # RINGS
+                target_df = [d for d in filt_rp if
+                             round(d['c'], 3) == round(t_c_rings, 3) and
+                             round(d['cpos'], 3) == round(t_cpos_rings, 3) and
+                             d['Tmax'] == t_Tmax_rings]
+
+            df_base_rp = pd.DataFrame(target_df).sort_values(by='p')
+
+            if not df_base_rp.empty:
+                plt.figure(figsize=(6, 4))
+                plt.errorbar(df_base_rp['p'], df_base_rp['R_mean'], yerr=df_base_rp['R_std'],
+                             fmt='o-', color='magenta', linewidth=2.5, capsize=3, label='Target Baseline')
+
+                plt.title(f"Baseline Giant Component (R) vs p ({dim_title_suffix})")
+                plt.xlabel("Control Parameter (p)")
+                plt.ylabel("Fraction of Active Nodes (R)")
+                plt.ylim(0, 1.05)
+                plt.grid(True, linestyle='--', alpha=0.6)
+                plt.legend(loc='best')
+                plt.tight_layout()
+                plt.savefig(os.path.join(global_fig_dir, "global_baseline_R_vs_p.png"), dpi=400)
+                plt.close()
+
+        # E. R VS P COMPARISON PLOT (MULTIPLE LINES FOR DIFFERENT PARAMETERS)
+        if do_param_comparison and filt_rp:
+            print(f"-> Generating R vs p parameter comparison plot {dim_title_suffix}...")
+            df_params = pd.DataFrame(filt_rp)
+
+            # Automatically detect which parameters actually vary in your folders (excluding 'p' and 'R_mean')
+            param_cols = ['c', 'cpos', 'cneg', 'd0', 'dr']
+            varying_params = [col for col in param_cols if df_params[col].nunique() > 1]
+
+            plt.figure(figsize=(8, 6))
+
+            if not varying_params:
+                # If no parameters varied (you only tested different p's for one network setup)
+                grouped = df_params.groupby('p').mean(numeric_only=True).reset_index()
+                y_err = grouped['R_std'] if 'R_std' in grouped.columns else None
+                plt.errorbar(grouped['p'], grouped['R_mean'], yerr=y_err, fmt='o-',
                              linewidth=2, elinewidth=1, capsize=0, alpha=0.8,
-                             label=label)
+                             color='magenta', label='Base parameters')
+            else:
+                # ADAPTIVE VISUAL STRATEGY BASED ON NUMBER OF VARYING PARAMETERS
+                num_vars = len(varying_params)
 
-        plt.title(f"Steady State Giant Component (R) vs p ({current_dim}, N={dim_N})")
-        plt.xlabel("Control Parameter (p)")
-        plt.ylabel("Average Fraction of Active Nodes (R)")
-        plt.ylim(0, 1.05)
-        plt.grid(True, linestyle='--', alpha=0.6)
+                # Define visual scales available for mapping
+                line_styles = ['-', '--', ':', '-.']
+                markers = ['o', 's', '^', 'D', 'v', 'p', '*']
 
-        # Put the legend outside the plot, scaled slightly smaller to fit complex labels
-        plt.legend(title="Varying Parameters", bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
+                # Create dynamic mappings for the varying parameters
+                if num_vars == 1:
+                    # 1 Variable: Use a sequential colormap (Intensity implies magnitude)
+                    unique_p1 = sorted(df_params[varying_params[0]].unique())
+                    colors = sns.color_palette("viridis", n_colors=len(unique_p1))
+                    color_map = dict(zip(unique_p1, colors))
+
+                elif num_vars >= 2:
+                    # 2+ Variables: 1st is Color (Categorical), 2nd is Line Style
+                    unique_p1 = sorted(df_params[varying_params[0]].unique())
+                    colors = sns.color_palette("tab10", n_colors=len(unique_p1))
+                    color_map = dict(zip(unique_p1, colors))
+
+                    unique_p2 = sorted(df_params[varying_params[1]].unique())
+                    # Use modulo to avoid IndexError if there are many unique values
+                    style_map = {val: line_styles[i % len(line_styles)] for i, val in enumerate(unique_p2)}
+
+                    if num_vars >= 3:
+                        # 3+ Variables: 3rd is Marker shape
+                        unique_p3 = sorted(df_params[varying_params[2]].unique())
+                        marker_map = {val: markers[i % len(markers)] for i, val in enumerate(unique_p3)}
+
+                # Group the data and plot using the mapped aesthetics
+                for name, group in df_params.groupby(varying_params):
+                    group = group.sort_values(by='p')
+
+                    # Ensure 'name' is always a tuple for consistent unpacking
+                    vals = name if isinstance(name, tuple) else (name,)
+
+                    # Create a dynamic legend label
+                    label = ", ".join([f"{var}={val}" for var, val in zip(varying_params, vals)])
+
+                    # Resolve aesthetics based on the mappings created above
+                    c_val = color_map[vals[0]] if num_vars >= 1 else 'magenta'
+                    ls_val = style_map[vals[1]] if num_vars >= 2 else '-'
+                    m_val = marker_map[vals[2]] if num_vars >= 3 else 'o'
+
+                    # Extract error if available
+                    y_err = group['R_std'] if 'R_std' in group.columns else None
+
+                    # Plot with fine error bars (elinewidth=1) and no caps to prevent visual clutter
+                    plt.errorbar(group['p'], group['R_mean'], yerr=y_err,
+                                 marker=m_val, linestyle=ls_val, color=c_val,
+                                 linewidth=2, elinewidth=1, capsize=0, alpha=0.8,
+                                 label=label)
+
+            plt.title(f"Steady State Giant Component (R) vs p ({dim_title_suffix})")
+            plt.xlabel("Control Parameter (p)")
+            plt.ylabel("Average Fraction of Active Nodes (R)")
+            plt.ylim(0, 1.05)
+            plt.grid(True, linestyle='--', alpha=0.6)
+
+            # Put the legend outside the plot, scaled slightly smaller to fit complex labels
+            plt.legend(title="Varying Parameters", bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
+            plt.tight_layout()
+            plt.savefig(os.path.join(global_fig_dir, "global_R_vs_p_comparison.png"), dpi=400)
+            plt.close()
+
+# =============================================================================
+# CROSS-DIMENSIONAL ANALYSIS (PERCOLATION & TRANSITION)
+# =============================================================================
+print("\n" + "=" * 60)
+print("Generating Cross-Dimensional Master Plots (Percolation)...")
+cross_fig_dir = "./results/cross_dimensional_figures"
+os.makedirs(cross_fig_dir, exist_ok=True)
+
+# 1. Provide the exact target baseline models from the independently collected lists
+baseline_1D = master_limit_1D
+baseline_2D = master_limit_2D
+
+# For RINGS, we extract from the global RINGS list matching the target probabilities
+baseline_RINGS = [d for d in global_R_vs_p_RINGS if
+                  round(d['c'], 3) == round(t_c_rings, 3) and
+                  round(d['cpos'], 3) == round(t_cpos_rings, 3) and
+                  round(d['cneg'], 3) == round(t_cneg_rings, 3)]
+
+# Convert to dataframes
+df1 = pd.DataFrame(baseline_1D).sort_values('p') if baseline_1D else pd.DataFrame()
+df2 = pd.DataFrame(baseline_2D).sort_values('p') if baseline_2D else pd.DataFrame()
+dfR = pd.DataFrame(baseline_RINGS)  # Do not sort yet, it has multiple num_rings
+
+if not df1.empty or not df2.empty or not dfR.empty:
+
+    unique_rings = sorted(dfR['num_rings'].dropna().unique()) if not dfR.empty else []
+    # Create a nice sequential palette for the scalable rings (avoiding too light colors)
+    ring_colors = sns.color_palette("GnBu", n_colors=len(unique_rings) + 2)
+
+    # --- PLOT 1: MASTER R vs p (Parameter of Order) ---
+    plt.figure(figsize=(8, 5))
+    if not df1.empty:
+        plt.errorbar(df1['p'], df1['R_mean'], yerr=df1['R_std'], fmt='o-',
+                     color='purple', label='1D Limit (Ring)', linewidth=2, capsize=3, zorder=5)
+
+    if not dfR.empty:
+        for idx, r_val in enumerate(unique_rings):
+            df_sub = dfR[dfR['num_rings'] == r_val].sort_values('p')
+            plt.errorbar(df_sub['p'], df_sub['R_mean'], yerr=df_sub['R_std'], fmt='^-',
+                         color=ring_colors[idx + 1], label=f'Rings (Nr={int(r_val)})', linewidth=1.5, zorder=4)
+
+    if not df2.empty:
+        plt.errorbar(df2['p'], df2['R_mean'], yerr=df2['R_std'], fmt='s-',
+                     color='darkorange', label='2D Limit (Square)', linewidth=2, capsize=3, zorder=6)
+
+    plt.title("Dimensional Shift of the Triadic Percolation Transition")
+    plt.xlabel("Control Parameter (p)")
+    plt.ylabel("Fraction of Active Nodes (R)")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(os.path.join(cross_fig_dir, "master_R_vs_p.png"), dpi=400)
+    plt.close()
+
+    # --- PLOT 2: MASTER SUSCEPTIBILITY vs p ---
+    plt.figure(figsize=(8, 5))
+    if not df1.empty:
+        plt.plot(df1['p'], df1['susceptibility'], marker='o',
+                 color='purple', label='1D Limit (Ring)', linewidth=2, zorder=5)
+
+    if not dfR.empty:
+        for idx, r_val in enumerate(unique_rings):
+            df_sub = dfR[dfR['num_rings'] == r_val].sort_values('p')
+            plt.plot(df_sub['p'], df_sub['susceptibility'], marker='^',
+                     color=ring_colors[idx + 1], label=f'Rings (Nr={int(r_val)})', linewidth=1.5, zorder=4)
+
+    if not df2.empty:
+        plt.plot(df2['p'], df2['susceptibility'], marker='s',
+                 color='darkorange', label='2D Limit (Square)', linewidth=2, zorder=6)
+
+    plt.title(r"Thermodynamic Susceptibility ($\chi$) vs Control Parameter")
+    plt.xlabel("Control Parameter (p)")
+    plt.ylabel(r"Susceptibility $\chi = N (\langle R^2 \rangle - \langle R \rangle^2)$")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(os.path.join(cross_fig_dir, "master_susceptibility_vs_p.png"), dpi=400)
+    plt.close()
+
+    # --- PLOT 3: DUAL PANEL (R vs p AND Susceptibility vs p COMBINED) ---
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 8), sharex=True,
+                                   gridspec_kw={'height_ratios': [1, 1]})
+
+    # TOP PANEL: Parameter of Order (R)
+    ax1.set_title("Triadic Percolation: Parameter of Order and Susceptibility")
+    if not df1.empty:
+        ax1.errorbar(df1['p'], df1['R_mean'], yerr=df1['R_std'], fmt='o-', color='purple', label='1D Limit',
+                     linewidth=2, zorder=5)
+    if not dfR.empty:
+        for idx, r_val in enumerate(unique_rings):
+            df_sub = dfR[dfR['num_rings'] == r_val].sort_values('p')
+            ax1.errorbar(df_sub['p'], df_sub['R_mean'], yerr=df_sub['R_std'], fmt='^-', color=ring_colors[idx + 1],
+                         label=f'Rings (Nr={int(r_val)})', linewidth=1.5, zorder=4)
+    if not df2.empty:
+        ax1.errorbar(df2['p'], df2['R_mean'], yerr=df2['R_std'], fmt='s-', color='darkorange', label='2D Limit',
+                     linewidth=2, zorder=6)
+
+    ax1.set_ylabel("Active Nodes (R)")
+    ax1.grid(True, linestyle='--', alpha=0.6)
+    ax1.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+
+    # BOTTOM PANEL: Susceptibility (Chi)
+    if not df1.empty:
+        ax2.plot(df1['p'], df1['susceptibility'], marker='o', color='purple', linewidth=2, zorder=5)
+    if not dfR.empty:
+        for idx, r_val in enumerate(unique_rings):
+            df_sub = dfR[dfR['num_rings'] == r_val].sort_values('p')
+            ax2.plot(df_sub['p'], df_sub['susceptibility'], marker='^', color=ring_colors[idx + 1], linewidth=1.5,
+                     zorder=4)
+    if not df2.empty:
+        ax2.plot(df2['p'], df2['susceptibility'], marker='s', color='darkorange', linewidth=2, zorder=6)
+
+    ax2.set_xlabel("Control Parameter (p)")
+    ax2.set_ylabel(r"Susceptibility ($\chi$)")
+    ax2.grid(True, linestyle='--', alpha=0.6)
+
+    # Remove horizontal space between the two panels
+    plt.subplots_adjust(hspace=0.05)
+    plt.savefig(os.path.join(cross_fig_dir, "master_dual_percolation_plot.png"), dpi=400, bbox_inches='tight')
+    plt.close()
+
+    print(f"-> Cross-Dimensional master plots saved successfully in {cross_fig_dir}")
+
+    # --- PLOT 4: CRITICAL PARAMETER (p_c) vs DIMENSIONALITY (Nr) ---
+    # In Statistical Mechanics, p_c is strictly defined as the point where the susceptibility diverges (peaks).
+    # We find this peak dynamically for each dimension and resolution.
+
+    pc_1D = df1.loc[df1['susceptibility'].idxmax(), 'p'] if not df1.empty else None
+    pc_2D = df2.loc[df2['susceptibility'].idxmax(), 'p'] if not df2.empty else None
+
+    pc_rings = []
+    nr_rings = []
+
+    if not dfR.empty:
+        for r_val in unique_rings:
+            df_sub = dfR[dfR['num_rings'] == r_val]
+            if not df_sub.empty:
+                # Find the 'p' that maximizes susceptibility for this specific Nr
+                pc_val = df_sub.loc[df_sub['susceptibility'].idxmax(), 'p']
+                pc_rings.append(pc_val)
+                nr_rings.append(r_val)
+
+    if pc_rings or pc_1D is not None or pc_2D is not None:
+        plt.figure(figsize=(8, 5))
+
+        # Plot the scalable coupled rings as a dynamic trajectory connecting the points
+        if pc_rings:
+            plt.plot(nr_rings, pc_rings, marker='D', color='teal', linewidth=2.5, markersize=8,
+                     label=r'Coupled Rings ($p_c$ vs $N_r$)', zorder=4)
+
+        # Plot the 1D and 2D limits as infinite horizontal asymptotes (references)
+        # This prevents point overlapping and shows the physical boundary limits of the phase transition.
+        if pc_1D is not None:
+            plt.axhline(pc_1D, color='purple', linestyle='--', linewidth=2, alpha=0.8,
+                        label=f'1D Limit Asymptote ($p_c \\approx {pc_1D:.2f}$)', zorder=2)
+
+        if pc_2D is not None:
+            plt.axhline(pc_2D, color='darkorange', linestyle='--', linewidth=2, alpha=0.8,
+                        label=f'2D Limit Asymptote ($p_c \\approx {pc_2D:.2f}$)', zorder=2)
+
+        plt.title(r"Dimensional Crossover: Critical Threshold ($p_c$) vs Resolution")
+        plt.xlabel("Number of Rings / Resolution ($N_r$)")
+        plt.ylabel(r"Critical Control Parameter ($p_c$)")
+
+        # Ensure x-axis only shows integer ring values
+        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
+        plt.grid(True, linestyle=':', alpha=0.6)
+        plt.legend(loc='best')
         plt.tight_layout()
-        plt.savefig(os.path.join(global_fig_dir, "global_R_vs_p_comparison.png"), dpi=400)
+        plt.savefig(os.path.join(cross_fig_dir, "master_pc_vs_Nr.png"), dpi=400)
         plt.close()
-
-    # TODO: fractal
-    # # 5. FRACTAL DIMENSION FINITE-SIZE SCALING PLOT (MULTIPLE LINES FOR DIFFERENT N)
-    # if g_data["fractal"] and dim_p_fss is not None:
-    #     print("-> Generating Finite-Size Scaling Plot for Fractal Dimension...")
-    #
-    #     # Sort by N ascending so colors and legend are ordered perfectly
-    #     g_data["fractal"].sort(key=lambda x: x['N'])
-    #
-    #     plt.figure(figsize=(8, 6))
-    #     colors = sns.color_palette("viridis", n_colors=len(g_data["fractal"]))
-    #
-    #     # Pre-calculate crossovers to draw the Early Theory line ONLY ONCE
-    #     max_x_cross, x_start_global, y_start_global = 0, 0, 0
-    #     crossovers = []
-    #
-    #     for data_fss in g_data["fractal"]:
-    #         lr, lN = data_fss['log_r'], data_fss['log_N']
-    #         if len(lr) >= 3:
-    #             x_cross = (4 * lr[0] - lr[-1] + lN[-1] - lN[0]) / 3.0
-    #             y_cross = 4.0 * (x_cross - lr[0]) + lN[0]
-    #             crossovers.append((x_cross, y_cross, lr[-1], lN[-1]))
-    #             if x_cross > max_x_cross:
-    #                 max_x_cross = x_cross
-    #                 x_start_global, y_start_global = lr[0], lN[0]
-    #         else:
-    #             crossovers.append(None)
-    #
-    #     # Plot Early Theory (slope=4) exactly ONCE spanning to the max crossover
-    #     if max_x_cross > 0:
-    #         x_early = np.array([x_start_global, max_x_cross + 0.1])
-    #         y_early = 4.0 * (x_early - x_start_global) + y_start_global
-    #         plt.plot(x_early, y_early, color='orange', linestyle='--', linewidth=2, alpha=0.6,
-    #                  label=r'Early Theory ($d_H=4$)')
-    #
-    #     added_late, added_cross = False, False
-    #
-    #     # Plot simulations and individual asymptotic theories
-    #     for i, data_fss in enumerate(g_data["fractal"]):
-    #         lr, lN, current_N = data_fss['log_r'], data_fss['log_N'], data_fss['N']
-    #
-    #         plt.plot(lr, lN, marker='o', linestyle='-', color=colors[i], linewidth=2,
-    #                  label=f'Simulation (N={current_N})')
-    #
-    #         if crossovers[i]:
-    #             x_cross, y_cross, x_final, y_final = crossovers[i]
-    #             l_late = r'Asymptotic Theory ($d_H=1$)' if not added_late else "_nolegend_"
-    #             l_cross = r'Crossover Scale ($r_\times$)' if not added_cross else "_nolegend_"
-    #
-    #             x_late = np.array([max(0, x_cross - 0.1), x_final])
-    #             y_late = 1.0 * (x_late - x_final) + y_final
-    #             plt.plot(x_late, y_late, color='red', linestyle='--', linewidth=1.5, alpha=0.4, label=l_late)
-    #             plt.plot(x_cross, y_cross, 'ko', markersize=5, label=l_cross)
-    #             added_late, added_cross = True, True
-    #
-    #     plt.title(f"Fractal Dimension Finite-Size Scaling ({current_dim}, p={dim_p_fss})")
-    #     plt.xlabel(r"$\log_{10}(r)$ [Topological Radius / Hops]")
-    #     plt.ylabel(r"$\log_{10}(N(r))$ [Cumulative Mass / Nodes]")
-    #     plt.grid(True, linestyle=':', alpha=0.7)
-    #
-    #     # Sorting the legend
-    #     handles, labels = plt.gca().get_legend_handles_labels()
-    #
-    #     def legend_sort_key(text):
-    #         if "Simulation" in text:
-    #             # Take the N so it gets sorted like 2500 -> 5000 -> ...
-    #             n_val = int(text.split("N=")[1].split(")")[0])
-    #             return 0, n_val
-    #         elif "Early" in text:
-    #             return 1, 0
-    #         elif "Asymptotic" in text:
-    #             return 2, 0
-    #         elif "Crossover" in text:
-    #             return 3, 0
-    #         else:
-    #             return 4, 0
-    #
-    #     sorted_pairs = sorted(zip(handles, labels), key=lambda pair: legend_sort_key(pair[1]))
-    #     sorted_handles, sorted_labels = zip(*sorted_pairs)
-    #
-    #     plt.legend(sorted_handles, sorted_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
-    #     plt.tight_layout()
-    #     plt.savefig(os.path.join(global_fig_dir, f"global_fractal_scaling_p{dim_p_fss:.2f}.png"), dpi=400)
-    #     plt.close()
 
 print("\n" + "=" * 60)
 print(" ALL ANALYSIS COMPLETED SUCCESSFULLY!")
